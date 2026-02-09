@@ -1,0 +1,947 @@
+{
+  "name": "2. Response Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            },
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400],
+      "notes": "Runs at 8am and 6pm daily"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "labelIds": ["INBOX"],
+          "q": "is:unread from:(-coachwes@thelaunchpadincubator.com)"
+        },
+        "options": {
+          "format": "resolved"
+        }
+      },
+      "id": "get-new-emails",
+      "name": "Get New Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      },
+      "notes": "Get unread emails not from yourself"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-emails",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-emails-exist",
+      "name": "Has New Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "filterByFormula": "LOWER({Email})=LOWER('{{ $json.from.email }}')"
+      },
+      "id": "find-user",
+      "name": "Find User by Email",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-user-found",
+      "name": "User Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store email data for later use\nconst emailData = $('Get New Emails').item.json;\n\n// Check for pause keywords\nconst pauseKeywords = ['pause', 'break', 'stop', 'unsubscribe', 'take a break', 'stepping back'];\nconst resumeKeywords = ['resume', \"i'm back\", 'start again', 'ready'];\n\nconst messageText = (emailData.text || emailData.snippet || '').toLowerCase();\n\nconst isPause = pauseKeywords.some(keyword => messageText.includes(keyword));\nconst isResume = resumeKeywords.some(keyword => messageText.includes(keyword));\n\nreturn {\n  ...emailData,\n  userId: $json.id,\n  userFields: $json.fields,\n  isPauseRequest: isPause && !isResume,\n  isResumeRequest: isResume,\n  rawMessage: emailData.text || emailData.snippet || ''\n};"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-pause",
+              "leftValue": "={{ $json.isPauseRequest }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-pause",
+      "name": "Pause Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "id": "={{ $json.userId }}",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Status",
+              "fieldValue": "Paused"
+            }
+          ]
+        }
+      },
+      "id": "pause-user",
+      "name": "Pause User",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1780, 100],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Prepare Data').item.json.from.email }}",
+        "subject": "Re: Coaching",
+        "message": "No problem - I'll pause check-ins for now. Just reply 'resume' whenever you're ready to pick back up.\n\nWes",
+        "options": {
+          "threadId": "={{ $('Prepare Data').item.json.threadId }}"
+        }
+      },
+      "id": "send-pause-confirmation",
+      "name": "Send Pause Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2000, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-resume",
+              "leftValue": "={{ $json.isResumeRequest }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-resume",
+      "name": "Resume Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "id": "={{ $json.userId }}",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Status",
+              "fieldValue": "Active"
+            }
+          ]
+        }
+      },
+      "id": "resume-user",
+      "name": "Resume User",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [2000, 250],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Prepare Data').item.json.from.email }}",
+        "subject": "Re: Coaching",
+        "message": "Welcome back! I'll resume the regular check-ins. You'll hear from me soon.\n\nWes",
+        "options": {
+          "threadId": "={{ $('Prepare Data').item.json.threadId }}"
+        }
+      },
+      "id": "send-resume-confirmation",
+      "name": "Send Resume Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2220, 250],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "content": "Extract only the user's actual message from this email. Remove:\n- Email signatures\n- Previous quoted messages (lines starting with >)\n- \"On [date], [person] wrote:\" headers\n- Confidentiality disclaimers\n- \"Sent from my iPhone\" footers\n- Any other boilerplate\n\nReturn only the user's new content, preserving their formatting.\n\nEmail:\n{{ $json.rawMessage }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "parse-email",
+      "name": "Parse Email Content",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [2000, 450],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "filterByFormula": "AND({User}='{{ $('Prepare Data').item.json.userId }}', {Status}='Sent')",
+        "sort": {
+          "sortConfigs": [
+            {
+              "fieldName": "Created",
+              "direction": "desc"
+            }
+          ]
+        },
+        "limit": 5
+      },
+      "id": "get-recent-conversations",
+      "name": "Get Recent Conversations",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [2220, 450],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.KNOWLEDGE_TABLE_ID }}"
+        },
+        "filterByFormula": "FIND('{{ $('Prepare Data').item.json.userFields.Stage }}', ARRAYJOIN({Stage}, ','))",
+        "limit": 10
+      },
+      "id": "get-knowledge-chunks",
+      "name": "Get Knowledge Chunks",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [2440, 350],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.MODEL_RESPONSES_TABLE_ID }}"
+        },
+        "filterByFormula": "{Stage}='{{ $('Prepare Data').item.json.userFields.Stage }}'"
+      },
+      "id": "get-model-responses",
+      "name": "Get Model Responses",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [2440, 500],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CORRECTED_TABLE_ID }}"
+        },
+        "sort": {
+          "sortConfigs": [
+            {
+              "fieldName": "Created",
+              "direction": "desc"
+            }
+          ]
+        },
+        "limit": 15
+      },
+      "id": "get-corrected-responses",
+      "name": "Get Corrected Responses",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [2440, 650],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all the data for the GPT prompt\nconst userData = $('Prepare Data').item.json;\nconst parsedMessage = $('Parse Email Content').item.json.text || $('Parse Email Content').item.json.message?.content || '';\nconst conversations = $('Get Recent Conversations').all().map(item => item.json);\nconst knowledgeChunks = $('Get Knowledge Chunks').all().map(item => item.json);\nconst modelResponses = $('Get Model Responses').all().map(item => item.json);\nconst correctedResponses = $('Get Corrected Responses').all().map(item => item.json);\n\n// Format conversation history\nconst conversationHistory = conversations.map(c => {\n  return `User: ${c.fields?.['User Message (Parsed)'] || 'N/A'}\\nCoach: ${c.fields?.['Sent Response'] || c.fields?.['AI Response'] || 'N/A'}`;\n}).join('\\n\\n---\\n\\n');\n\n// Format knowledge chunks\nconst knowledgeText = knowledgeChunks.map(k => {\n  return `Source: ${k.fields?.Source}\\nTopics: ${k.fields?.Topic?.join(', ') || 'General'}\\nContent: ${k.fields?.Content}`;\n}).join('\\n\\n---\\n\\n');\n\n// Format model responses\nconst modelText = modelResponses.map(m => {\n  return `Scenario: ${m.fields?.Scenario}\\nUser Example: ${m.fields?.['User Example']}\\nIdeal Response: ${m.fields?.['Ideal Response']}`;\n}).join('\\n\\n---\\n\\n');\n\n// Format corrected responses\nconst correctedText = correctedResponses.map(c => {\n  return `Original User Message: ${c.fields?.['Original User Message']}\\nAI Generated: ${c.fields?.['AI Response']}\\nCorrected To: ${c.fields?.['Corrected Response']}\\nNotes: ${c.fields?.Notes || 'N/A'}`;\n}).join('\\n\\n---\\n\\n');\n\n// Determine message type based on previous conversation\nlet messageType = 'check-in response';\nif (conversations.length > 0) {\n  const lastConv = conversations[0];\n  if (lastConv.fields?.Type === 'Check-in' && lastConv.fields?.['AI Response']) {\n    messageType = 'follow-up question';\n  }\n}\n\nreturn {\n  ...userData,\n  parsedMessage,\n  conversationHistory,\n  knowledgeText,\n  modelText,\n  correctedText,\n  messageType\n};"
+      },
+      "id": "combine-context",
+      "name": "Combine Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2660, 500]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "content": "You are Wes, an entrepreneurship coach. You're responding to a member of your coaching program via email.\n\n## Your Coaching Style\n- Direct and focused\n- Short responses (1-3 paragraphs)\n- One or two key points only\n- Actionable nudges, not lectures\n- Warm but not effusive\n- Reference specific resources when relevant (\"Lecture 12 covers this well\" or \"Chapter 4 of the Launch System has a framework for this\")\n\n## Context About This User\nName: {{ $json.userFields['First Name'] }}\nStage: {{ $json.userFields.Stage }}\nBusiness Idea: {{ $json.userFields['Business Idea'] || 'Not specified yet' }}\nSummary of their journey: {{ $json.userFields.Summary || 'New user, no history yet' }}\n\n## Recent Conversation History\n{{ $json.conversationHistory || 'No previous conversations' }}\n\n## Message Type\n{{ $json.messageType }}\n\n## Their Current Message\n{{ $json.parsedMessage }}\n\n## Relevant Content From Your Resources\n{{ $json.knowledgeText || 'No specific resources matched' }}\n\n## Model Responses (examples of your ideal coaching style)\n{{ $json.modelText || 'No model responses available' }}\n\n## Corrected Responses (learn from these)\n{{ $json.correctedText || 'No corrections to learn from yet' }}\n\n## Instructions\n1. Write a short coaching response (1-3 paragraphs)\n2. Focus on 1-2 key points maximum\n3. If relevant, point them to a specific resource\n4. Keep it conversational and human\n5. If this is a follow-up question, directly address their question\n\n## Important Flags - Set flag=true if ANY of these apply:\n- User asks about legal matters (contracts, liability, incorporation specifics)\n- User mentions mental health struggles, burnout, or personal crisis\n- User expresses significant frustration or emotional distress\n- User asks something not covered in the resources\n- User's situation is ambiguous or unclear\n- You detect a possible stage transition\n- User asks to speak with Wes directly\n- User asks about topics outside entrepreneurship coaching\n\n## Output Format\nRespond with JSON only, no markdown code blocks:\n{\"response\": \"Your coaching response here\", \"confidence\": 8, \"flag\": false, \"flag_reason\": null, \"detected_stage\": \"{{ $json.userFields.Stage }}\", \"stage_changed\": false, \"suggested_summary_update\": \"Brief update to add to their summary\", \"resource_referenced\": null}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "generate-response",
+      "name": "Generate AI Response",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [2880, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the GPT response\nconst gptOutput = $json.text || $json.message?.content || '{}';\nlet parsed;\n\ntry {\n  // Try to extract JSON from the response\n  const jsonMatch = gptOutput.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  // If parsing fails, create a flagged response\n  parsed = {\n    response: gptOutput,\n    confidence: 3,\n    flag: true,\n    flag_reason: 'Failed to parse AI response - manual review required',\n    detected_stage: $('Combine Context').item.json.userFields.Stage,\n    stage_changed: false,\n    suggested_summary_update: null,\n    resource_referenced: null\n  };\n}\n\n// Determine status based on confidence and flags\nlet status = 'Pending Review';\nif (parsed.confidence >= 8 && !parsed.flag) {\n  status = 'Approved';\n} else if (parsed.confidence < 5 || parsed.flag) {\n  status = 'Flagged';\n}\n\nreturn {\n  ...parsed,\n  status,\n  originalData: $('Combine Context').item.json\n};"
+      },
+      "id": "parse-gpt-response",
+      "name": "Parse GPT Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3100, 500]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "User",
+              "fieldValue": "[\"{{ $json.originalData.userId }}\"]"
+            },
+            {
+              "fieldName": "Type",
+              "fieldValue": "={{ $json.originalData.messageType === 'follow-up question' ? 'Follow-up' : 'Check-in' }}"
+            },
+            {
+              "fieldName": "User Message (Raw)",
+              "fieldValue": "={{ $json.originalData.rawMessage }}"
+            },
+            {
+              "fieldName": "User Message (Parsed)",
+              "fieldValue": "={{ $json.originalData.parsedMessage }}"
+            },
+            {
+              "fieldName": "AI Response",
+              "fieldValue": "={{ $json.response }}"
+            },
+            {
+              "fieldName": "Confidence",
+              "fieldValue": "={{ $json.confidence }}"
+            },
+            {
+              "fieldName": "Status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldName": "Flagged Reason",
+              "fieldValue": "={{ $json.flag_reason || '' }}"
+            },
+            {
+              "fieldName": "Gmail Thread ID",
+              "fieldValue": "={{ $json.originalData.threadId }}"
+            },
+            {
+              "fieldName": "Gmail Message ID",
+              "fieldValue": "={{ $json.originalData.id }}"
+            },
+            {
+              "fieldName": "Stage Detected",
+              "fieldValue": "={{ $json.detected_stage }}"
+            },
+            {
+              "fieldName": "Stage Changed",
+              "fieldValue": "={{ $json.stage_changed }}"
+            },
+            {
+              "fieldName": "Resource Referenced",
+              "fieldValue": "={{ $json.resource_referenced || '' }}"
+            }
+          ]
+        }
+      },
+      "id": "create-conversation",
+      "name": "Create Conversation Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [3320, 500],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "id": "={{ $('Parse GPT Response').item.json.originalData.userId }}",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Last Response Date",
+              "fieldValue": "={{ new Date().toISOString().split('T')[0] }}"
+            },
+            {
+              "fieldName": "Last Thread ID",
+              "fieldValue": "={{ $('Parse GPT Response').item.json.originalData.threadId }}"
+            },
+            {
+              "fieldName": "Last Message ID",
+              "fieldValue": "={{ $('Parse GPT Response').item.json.originalData.id }}"
+            }
+          ]
+        }
+      },
+      "id": "update-user-dates",
+      "name": "Update User Last Response",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [3540, 500],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Prepare Data').item.json.id }}"
+      },
+      "id": "mark-as-read",
+      "name": "Mark Email as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3760, 500],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-emails",
+      "name": "No New Emails",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "content": "## Unknown Sender\n\nEmail is from someone not in the Users table.\nCould be spam or a new person to onboard.",
+        "height": 80,
+        "width": 250
+      },
+      "id": "unknown-note",
+      "name": "Unknown Sender Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1120, 450]
+    },
+    {
+      "parameters": {},
+      "id": "unknown-sender",
+      "name": "Unknown Sender",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get New Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Emails": {
+      "main": [
+        [
+          {
+            "node": "Has New Emails?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Emails?": {
+      "main": [
+        [
+          {
+            "node": "Find User by Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find User by Email": {
+      "main": [
+        [
+          {
+            "node": "User Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Found?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Sender",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Pause Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause Request?": {
+      "main": [
+        [
+          {
+            "node": "Pause User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resume Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause User": {
+      "main": [
+        [
+          {
+            "node": "Send Pause Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Request?": {
+      "main": [
+        [
+          {
+            "node": "Resume User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume User": {
+      "main": [
+        [
+          {
+            "node": "Send Resume Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email Content": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Conversations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Conversations": {
+      "main": [
+        [
+          {
+            "node": "Get Knowledge Chunks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Model Responses",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Corrected Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Knowledge Chunks": {
+      "main": [
+        [
+          {
+            "node": "Combine Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Model Responses": {
+      "main": [
+        [
+          {
+            "node": "Combine Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Corrected Responses": {
+      "main": [
+        [
+          {
+            "node": "Combine Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Context": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Response": {
+      "main": [
+        [
+          {
+            "node": "Parse GPT Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GPT Response": {
+      "main": [
+        [
+          {
+            "node": "Create Conversation Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Conversation Record": {
+      "main": [
+        [
+          {
+            "node": "Update User Last Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User Last Response": {
+      "main": [
+        [
+          {
+            "node": "Mark Email as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Coaching System"
+    }
+  ],
+  "triggerCount": 1,
+  "versionId": "1"
+}

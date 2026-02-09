@@ -1,0 +1,24 @@
+# n8n Environment Variables Template
+# Copy these to your n8n Settings > Environment Variables
+
+# Airtable Configuration
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+USERS_TABLE_ID=tblXXXXXXXXXXXXXX
+CONVERSATIONS_TABLE_ID=tblXXXXXXXXXXXXXX
+KNOWLEDGE_TABLE_ID=tblXXXXXXXXXXXXXX
+MODEL_RESPONSES_TABLE_ID=tblXXXXXXXXXXXXXX
+CORRECTED_TABLE_ID=tblXXXXXXXXXXXXXX
+
+# Email Configuration
+COACH_EMAIL=coachwes@thelaunchpadincubator.com
+
+# How to get these IDs:
+# 1. Open your Airtable base
+# 2. Click Help > API Documentation
+# 3. Base ID is in the URL: https://airtable.com/[BASE_ID]/api/docs
+# 4. Table IDs are listed in the documentation
+
+# Notes:
+# - These are referenced in workflows as: {{ $env.AIRTABLE_BASE_ID }}
+# - After setting, restart n8n for changes to take effect
+# - Keep these secure - don't commit to public repos

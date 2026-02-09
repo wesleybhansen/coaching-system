@@ -1,0 +1,525 @@
+{
+  "name": "5. Cleanup (Catch-up)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "notes": "Runs daily at 11pm"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 100,
+        "filters": {
+          "labelIds": ["INBOX"],
+          "q": "is:unread older_than:1d from:(-coachwes@thelaunchpadincubator.com)"
+        },
+        "options": {
+          "format": "resolved"
+        }
+      },
+      "id": "get-old-unread",
+      "name": "Get Old Unread Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      },
+      "notes": "Emails older than 24 hours that weren't processed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-emails",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-has-emails",
+      "name": "Has Missed Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "filterByFormula": "LOWER({Email})=LOWER('{{ $json.from.email }}')"
+      },
+      "id": "find-user",
+      "name": "Find User",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const email = $('Get Old Unread Emails').item.json;\nconst userResults = $input.all();\nconst user = userResults.length > 0 ? userResults[0].json : null;\n\nreturn {\n  emailId: email.id,\n  from: email.from,\n  subject: email.subject,\n  text: email.text || email.snippet,\n  threadId: email.threadId,\n  userId: user?.id || null,\n  userEmail: email.from.email,\n  isKnownUser: !!user?.id\n};"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-known",
+              "leftValue": "={{ $json.isKnownUser }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-known-user",
+      "name": "Known User?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "User",
+              "fieldValue": "[\"{{ $json.userId }}\"]"
+            },
+            {
+              "fieldName": "Type",
+              "fieldValue": "Follow-up"
+            },
+            {
+              "fieldName": "User Message (Raw)",
+              "fieldValue": "={{ $json.text }}"
+            },
+            {
+              "fieldName": "Status",
+              "fieldValue": "Flagged"
+            },
+            {
+              "fieldName": "Flagged Reason",
+              "fieldValue": "Missed by regular processing - manual review needed"
+            },
+            {
+              "fieldName": "Gmail Thread ID",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldName": "Gmail Message ID",
+              "fieldValue": "={{ $json.emailId }}"
+            }
+          ]
+        }
+      },
+      "id": "log-missed-known",
+      "name": "Log Missed (Known User)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1560, 100],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Type",
+              "fieldValue": "Onboarding"
+            },
+            {
+              "fieldName": "User Message (Raw)",
+              "fieldValue": "={{ 'From: ' + $json.userEmail + '\\n\\n' + $json.text }}"
+            },
+            {
+              "fieldName": "Status",
+              "fieldValue": "Flagged"
+            },
+            {
+              "fieldName": "Flagged Reason",
+              "fieldValue": "Unknown sender - potential new user to onboard"
+            },
+            {
+              "fieldName": "Gmail Thread ID",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldName": "Gmail Message ID",
+              "fieldValue": "={{ $json.emailId }}"
+            }
+          ]
+        }
+      },
+      "id": "log-missed-unknown",
+      "name": "Log Missed (Unknown)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Prepare Data').item.json.emailId }}"
+      },
+      "id": "mark-read-known",
+      "name": "Mark Read (Known)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Prepare Data').item.json.emailId }}"
+      },
+      "id": "mark-read-unknown",
+      "name": "Mark Read (Unknown)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all missed emails for summary\nconst missed = $('Prepare Data').all();\nconst count = missed.length;\n\nif (count === 0) {\n  return { shouldNotify: false };\n}\n\nconst summary = missed.map(m => {\n  const data = m.json;\n  return `- ${data.userEmail}: ${data.isKnownUser ? 'Known user' : 'Unknown sender'}`;\n}).join('\\n');\n\nreturn {\n  shouldNotify: true,\n  count,\n  summary\n};"
+      },
+      "id": "build-summary",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-notify",
+              "leftValue": "={{ $json.shouldNotify }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-should-notify",
+      "name": "Should Notify?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "sendTo": "coachwes@thelaunchpadincubator.com",
+        "subject": "Coaching System: {{ $json.count }} Missed Emails Flagged",
+        "message": "The cleanup workflow found {{ $json.count }} email(s) that weren't processed by the regular workflow.\n\nThey've been logged in Airtable as 'Flagged' for your review.\n\nSummary:\n{{ $json.summary }}\n\nCheck the 'Flagged' view in the Conversations table.",
+        "options": {
+          "appendAttributionToBody": false
+        }
+      },
+      "id": "send-notification",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2440, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-missed",
+      "name": "No Missed Emails",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {},
+      "id": "no-notification",
+      "name": "No Notification Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2440, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Old Unread Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Old Unread Emails": {
+      "main": [
+        [
+          {
+            "node": "Has Missed Emails?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Missed Emails?": {
+      "main": [
+        [
+          {
+            "node": "Find User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Missed Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find User": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Known User?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Known User?": {
+      "main": [
+        [
+          {
+            "node": "Log Missed (Known User)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Missed (Unknown)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Missed (Known User)": {
+      "main": [
+        [
+          {
+            "node": "Mark Read (Known)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Missed (Unknown)": {
+      "main": [
+        [
+          {
+            "node": "Mark Read (Unknown)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Read (Known)": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Read (Unknown)": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Should Notify?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Notify?": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Notification Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Coaching System"
+    }
+  ],
+  "triggerCount": 1,
+  "versionId": "1"
+}

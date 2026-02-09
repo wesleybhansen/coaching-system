@@ -1,0 +1,464 @@
+{
+  "name": "4. Re-engagement",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "notes": "Runs daily at 10am"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "filterByFormula": "AND({Status}='Active', DATETIME_DIFF(TODAY(), {Last Response Date}, 'days') >= 10)"
+      },
+      "id": "get-silent-users",
+      "name": "Get Silent Users (10+ days)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-users",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-has-users",
+      "name": "Has Silent Users?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "filterByFormula": "AND({User}='{{ $json.id }}', {Type}='Re-engagement', DATETIME_DIFF(TODAY(), CREATED_TIME(), 'days') <= 14)"
+      },
+      "id": "check-recent-reengagement",
+      "name": "Check Recent Re-engagement",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if we already sent a re-engagement email in the last 14 days\nconst recentReengagements = $input.all();\nconst userData = $('Get Silent Users (10+ days)').item.json;\n\nconst alreadySent = recentReengagements.some(item => item.json.id);\n\nreturn {\n  ...userData,\n  alreadySentReengagement: alreadySent\n};"
+      },
+      "id": "evaluate-reengagement",
+      "name": "Evaluate Re-engagement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "not-sent",
+              "leftValue": "={{ $json.alreadySentReengagement }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-should-send",
+      "name": "Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fields.Email }}",
+        "subject": "Re: Coaching",
+        "message": "Hey {{ $json.fields['First Name'] }},\n\nHaven't heard from you in a bit. Everything okay?\n\nWhen you're ready, just reply with a quick update on what you're working on.\n\nWes",
+        "options": {
+          "threadId": "={{ $json.fields['Last Thread ID'] }}",
+          "appendAttributionToBody": false
+        }
+      },
+      "id": "send-reengagement",
+      "name": "Send Re-engagement Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "User",
+              "fieldValue": "[\"{{ $('Evaluate Re-engagement').item.json.id }}\"]"
+            },
+            {
+              "fieldName": "Type",
+              "fieldValue": "Re-engagement"
+            },
+            {
+              "fieldName": "Gmail Thread ID",
+              "fieldValue": "={{ $('Evaluate Re-engagement').item.json.fields['Last Thread ID'] }}"
+            },
+            {
+              "fieldName": "Gmail Message ID",
+              "fieldValue": "={{ $json.id }}"
+            },
+            {
+              "fieldName": "Status",
+              "fieldValue": "Sent"
+            }
+          ]
+        }
+      },
+      "id": "log-reengagement",
+      "name": "Log Re-engagement",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1780, 100],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "filterByFormula": "AND({Status}='Active', DATETIME_DIFF(TODAY(), {Last Response Date}, 'days') >= 17)"
+      },
+      "id": "get-very-silent",
+      "name": "Get Very Silent Users (17+ days)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [460, 500],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      },
+      "notes": "Users who haven't responded 7 days after re-engagement"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-very-silent",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-very-silent",
+      "name": "Has Very Silent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "id": "={{ $json.id }}",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Status",
+              "fieldValue": "Silent"
+            }
+          ]
+        }
+      },
+      "id": "mark-silent",
+      "name": "Mark as Silent",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [900, 500],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-silent",
+      "name": "No Silent Users",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 350]
+    },
+    {
+      "parameters": {},
+      "id": "skip-reengagement",
+      "name": "Skip - Already Sent",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {},
+      "id": "no-very-silent",
+      "name": "No Very Silent",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 600]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Silent Users (10+ days)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Very Silent Users (17+ days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Silent Users (10+ days)": {
+      "main": [
+        [
+          {
+            "node": "Has Silent Users?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Silent Users?": {
+      "main": [
+        [
+          {
+            "node": "Check Recent Re-engagement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Silent Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Recent Re-engagement": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Re-engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Re-engagement": {
+      "main": [
+        [
+          {
+            "node": "Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send?": {
+      "main": [
+        [
+          {
+            "node": "Send Re-engagement Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip - Already Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Re-engagement Email": {
+      "main": [
+        [
+          {
+            "node": "Log Re-engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Very Silent Users (17+ days)": {
+      "main": [
+        [
+          {
+            "node": "Has Very Silent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Very Silent?": {
+      "main": [
+        [
+          {
+            "node": "Mark as Silent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Very Silent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Coaching System"
+    }
+  ],
+  "triggerCount": 1,
+  "versionId": "1"
+}

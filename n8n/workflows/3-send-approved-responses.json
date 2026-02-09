@@ -1,0 +1,381 @@
+{
+  "name": "3. Send Approved Responses",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            },
+            {
+              "triggerAtHour": 19
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "notes": "Runs at 9am and 7pm (1 hour after Response Processor)"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "filterByFormula": "AND({Status}='Approved', {Sent At}=BLANK())"
+      },
+      "id": "get-approved",
+      "name": "Get Approved Responses",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-responses",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-has-responses",
+      "name": "Has Responses?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "id": "={{ $json.fields.User[0] }}"
+      },
+      "id": "get-user",
+      "name": "Get User Details",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add random delay offset (0-60 minutes in milliseconds)\nconst delayMs = Math.floor(Math.random() * 60 * 60 * 1000);\n\n// Get the response to send - use Sent Response if edited, otherwise AI Response\nconst conversation = $('Get Approved Responses').item.json;\nconst responseToSend = conversation.fields['Sent Response'] || conversation.fields['AI Response'];\n\nreturn {\n  conversationId: conversation.id,\n  conversationFields: conversation.fields,\n  user: $json,\n  responseToSend,\n  delayMs\n};"
+      },
+      "id": "prepare-send",
+      "name": "Prepare Send Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.delayMs }}",
+        "unit": "milliseconds"
+      },
+      "id": "random-delay",
+      "name": "Random Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1340, 200],
+      "notes": "Varies timing to feel more human"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.user.fields.Email }}",
+        "subject": "Re: Coaching",
+        "message": "={{ $json.responseToSend }}\n\nWes",
+        "options": {
+          "threadId": "={{ $json.conversationFields['Gmail Thread ID'] }}",
+          "appendAttributionToBody": false
+        }
+      },
+      "id": "send-email",
+      "name": "Send Response Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONVERSATIONS_TABLE_ID }}"
+        },
+        "id": "={{ $('Prepare Send Data').item.json.conversationId }}",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Status",
+              "fieldValue": "Sent"
+            },
+            {
+              "fieldName": "Sent At",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldName": "Sent Response",
+              "fieldValue": "={{ $('Prepare Send Data').item.json.responseToSend }}"
+            }
+          ]
+        }
+      },
+      "id": "update-conversation",
+      "name": "Update Conversation Status",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [1780, 200],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "content": "You are helping update a user's coaching summary. Based on the recent exchange below, provide a brief 1-2 sentence update to add to their ongoing summary.\n\nCurrent Summary:\n{{ $('Prepare Send Data').item.json.user.fields.Summary || 'No previous summary' }}\n\nUser's Message:\n{{ $('Prepare Send Data').item.json.conversationFields['User Message (Parsed)'] }}\n\nCoach's Response:\n{{ $('Prepare Send Data').item.json.responseToSend }}\n\nProvide only the new summary text to append (1-2 sentences). Focus on key progress, challenges, or direction changes."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "id": "generate-summary-update",
+      "name": "Generate Summary Update",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [2000, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.AIRTABLE_BASE_ID }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.USERS_TABLE_ID }}"
+        },
+        "id": "={{ $('Prepare Send Data').item.json.user.id }}",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldName": "Summary",
+              "fieldValue": "={{ ($('Prepare Send Data').item.json.user.fields.Summary || '') + '\\n\\n' + new Date().toISOString().split('T')[0] + ': ' + ($json.text || $json.message?.content || '') }}"
+            }
+          ]
+        }
+      },
+      "id": "update-user-summary",
+      "name": "Update User Summary",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [2220, 200],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-credentials",
+          "name": "Airtable Token"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-responses",
+      "name": "No Responses to Send",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Responses": {
+      "main": [
+        [
+          {
+            "node": "Has Responses?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Responses?": {
+      "main": [
+        [
+          {
+            "node": "Get User Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Responses to Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Details": {
+      "main": [
+        [
+          {
+            "node": "Prepare Send Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Send Data": {
+      "main": [
+        [
+          {
+            "node": "Random Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Random Delay": {
+      "main": [
+        [
+          {
+            "node": "Send Response Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Response Email": {
+      "main": [
+        [
+          {
+            "node": "Update Conversation Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Conversation Status": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary Update": {
+      "main": [
+        [
+          {
+            "node": "Update User Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Coaching System"
+    }
+  ],
+  "triggerCount": 1,
+  "versionId": "1"
+}
