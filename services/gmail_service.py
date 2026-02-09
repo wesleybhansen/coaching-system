@@ -12,6 +12,24 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Emails from these patterns are ignored (no-reply, system notifications, etc.)
+IGNORED_SENDERS = [
+    "noreply", "no-reply", "no_reply",
+    "mailer-daemon", "postmaster",
+    "notifications", "notify",
+    "calendar-notification",
+    "workspace-noreply",
+    "admin@google", "admin@workspace",
+    "googleworkspace",
+    "accounts.google",
+]
+
+
+def _is_ignored_sender(from_addr: str) -> bool:
+    """Return True if this sender should be ignored."""
+    addr = from_addr.lower()
+    return any(pattern in addr for pattern in IGNORED_SENDERS)
+
 
 def _imap_connect():
     conn = imaplib.IMAP4_SSL(config.GMAIL_IMAP_HOST)
@@ -45,6 +63,11 @@ def fetch_unread_emails(max_results: int = 50) -> list[dict]:
 
             from_addr = parseaddr(msg["From"])[1].lower()
             if from_addr == config.GMAIL_ADDRESS.lower():
+                continue
+            if _is_ignored_sender(from_addr):
+                # Auto-mark system emails as read so they don't pile up
+                conn.store(msg_id, "+FLAGS", "\\Seen")
+                logger.info(f"Ignoring system email from {from_addr}")
                 continue
 
             body = _extract_body(msg)
@@ -250,8 +273,7 @@ def fetch_old_unread_emails(max_results: int = 100) -> list[dict]:
             msg = email.message_from_bytes(raw)
 
             from_addr = parseaddr(msg["From"])[1].lower()
-            if from_addr == config.GMAIL_ADDRESS.lower():
-                # Mark our own old emails as read
+            if from_addr == config.GMAIL_ADDRESS.lower() or _is_ignored_sender(from_addr):
                 conn.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
