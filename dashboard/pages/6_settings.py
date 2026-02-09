@@ -10,6 +10,71 @@ from db import supabase_client as db
 st.set_page_config(page_title="Settings", layout="wide")
 st.title("Settings")
 
+# ── Run Workflows ─────────────────────────────────────────
+st.subheader("Run Workflows")
+st.markdown("Run any workflow manually. These also run automatically on schedule via GitHub Actions.")
+
+wf_col1, wf_col2, wf_col3 = st.columns(3)
+
+with wf_col1:
+    if st.button("\U0001f4e8 Process Emails", use_container_width=True, help="Fetch unread emails and generate AI responses"):
+        with st.spinner("Processing emails..."):
+            try:
+                from workflows import process_emails
+                process_emails.run()
+                st.success("Emails processed!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {e}")
+
+with wf_col2:
+    if st.button("\u2709\ufe0f Send Approved", use_container_width=True, help="Send all approved responses"):
+        with st.spinner("Sending approved responses..."):
+            try:
+                from workflows import send_approved
+                send_approved.run()
+                st.success("Approved responses sent!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {e}")
+
+with wf_col3:
+    if st.button("\U0001f44b Check In", use_container_width=True, help="Send check-in messages to quiet users"):
+        with st.spinner("Sending check-ins..."):
+            try:
+                from workflows import check_in
+                check_in.run()
+                st.success("Check-ins sent!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {e}")
+
+wf_col4, wf_col5, _ = st.columns(3)
+
+with wf_col4:
+    if st.button("\U0001f504 Re-engagement", use_container_width=True, help="Nudge users silent 10+ days"):
+        with st.spinner("Running re-engagement..."):
+            try:
+                from workflows import re_engagement
+                re_engagement.run()
+                st.success("Re-engagement complete!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {e}")
+
+with wf_col5:
+    if st.button("\U0001f9f9 Cleanup", use_container_width=True, help="Catch any emails that slipped through"):
+        with st.spinner("Running cleanup..."):
+            try:
+                from workflows import cleanup
+                cleanup.run()
+                st.success("Cleanup complete!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed: {e}")
+
+st.divider()
+
 # Load current settings
 settings = db.get_all_settings()
 
@@ -30,7 +95,7 @@ if new_threshold != current_threshold:
     db.set_setting("global_auto_approve_threshold", str(new_threshold))
     st.success(f"Threshold updated to {new_threshold}")
 
-# ── Check-in Schedule ─────────────────────────────────────────
+# ── Check-in Schedule ─────────────────────────────────────
 st.subheader("Check-in Schedule")
 
 col1, col2 = st.columns(2)
@@ -56,7 +121,7 @@ with col2:
         db.set_setting("check_in_hour", str(new_hour))
         st.success("Check-in hour updated")
 
-# ── Processing Schedule ───────────────────────────────────────
+# ── Processing Schedule ───────────────────────────────────
 st.subheader("Email Processing")
 
 col1, col2, col3 = st.columns(3)
@@ -81,7 +146,7 @@ with col3:
         db.set_setting("process_end_hour", str(new_end))
         st.success("End hour updated")
 
-# ── Send Hours ────────────────────────────────────────────────
+# ── Send Hours ────────────────────────────────────────────
 st.subheader("Send Hours")
 send_hours = settings.get("send_hours", "9,13,19")
 new_send = st.text_input("Hours to send approved responses (comma-separated)", value=send_hours)
@@ -89,7 +154,7 @@ if new_send != send_hours:
     db.set_setting("send_hours", new_send)
     st.success("Send hours updated")
 
-# ── Re-engagement ─────────────────────────────────────────────
+# ── Re-engagement ─────────────────────────────────────────
 st.subheader("Re-engagement")
 re_days = int(settings.get("re_engagement_days", "10"))
 new_re_days = st.number_input("Days of silence before nudge", min_value=3, max_value=30, value=re_days)
@@ -97,7 +162,7 @@ if new_re_days != re_days:
     db.set_setting("re_engagement_days", str(new_re_days))
     st.success("Re-engagement days updated")
 
-# ── Response Length ────────────────────────────────────────────
+# ── Response Length ────────────────────────────────────────
 st.subheader("Response Settings")
 max_p = int(settings.get("max_response_paragraphs", "3"))
 new_max_p = st.number_input("Max response paragraphs", min_value=1, max_value=5, value=max_p)
@@ -105,7 +170,7 @@ if new_max_p != max_p:
     db.set_setting("max_response_paragraphs", str(new_max_p))
     st.success("Max paragraphs updated")
 
-# ── Gmail Status ──────────────────────────────────────────────
+# ── Gmail Status ──────────────────────────────────────────
 st.subheader("Gmail Connection")
 try:
     from services import gmail_service
@@ -114,13 +179,13 @@ try:
 except Exception as e:
     st.error(f"Gmail connection failed: {e}")
 
-# ── Workflow History ──────────────────────────────────────────
+# ── Workflow History ──────────────────────────────────────
 st.subheader("Recent Workflow Runs (24h)")
 runs = db.get_recent_workflow_runs(hours=24)
 if runs:
     for run in runs:
-        status_icon = {"completed": ":white_check_mark:", "failed": ":x:", "running": ":hourglass:"}.get(
-            run.get("status", ""), ":question:")
+        status_icon = {"completed": "\u2705", "failed": "\u274c", "running": "\u23f3"}.get(
+            run.get("status", ""), "\u2753")
         started = (run.get("started_at") or "")[:19].replace("T", " ")
         st.write(
             f"{status_icon} **{run['workflow_name']}** — {started} — "
@@ -131,7 +196,5 @@ if runs:
 else:
     st.info("No workflow runs recorded.")
 
-# ── Note about restarts ──────────────────────────────────────
 st.divider()
-st.caption("Note: Schedule changes take effect after the worker process restarts. "
-           "On Railway, redeploy the worker service to apply changes.")
+st.caption("Workflows also run automatically on schedule via GitHub Actions.")
