@@ -74,8 +74,8 @@ try:
     runs = db.get_recent_workflow_runs(hours=24, limit=10)
     if runs:
         for run in runs:
-            status_icon = {"completed": ":white_check_mark:", "failed": ":x:", "running": ":hourglass:"}.get(
-                run.get("status", ""), ":question:")
+            status_icon = {"completed": "\u2705", "failed": "\u274c", "running": "\u23f3"}.get(
+                run.get("status", ""), "\u2753")
             started = run.get("started_at", "")[:19].replace("T", " ")
             st.write(
                 f"{status_icon} **{run['workflow_name']}** — {started} — "

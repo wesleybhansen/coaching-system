@@ -46,8 +46,8 @@ with st.expander("Add new user"):
 
 # User list
 for user in users:
-    status_icon = {"Active": ":green_circle:", "Paused": ":yellow_circle:", "Silent": ":red_circle:", "Onboarding": ":blue_circle:"}.get(
-        user.get("status", ""), ":white_circle:")
+    status_icon = {"Active": "\U0001f7e2", "Paused": "\U0001f7e1", "Silent": "\U0001f534", "Onboarding": "\U0001f535"}.get(
+        user.get("status", ""), "\u26aa")
 
     with st.expander(f"{status_icon} {user.get('first_name', '')} — {user['email']} ({user.get('status', '?')})"):
         with st.form(f"edit_user_{user['id']}"):
