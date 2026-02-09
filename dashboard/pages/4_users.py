@@ -1,5 +1,8 @@
 """User management page."""
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import streamlit as st
 
 from db import supabase_client as db

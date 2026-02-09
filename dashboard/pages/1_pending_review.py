@@ -1,5 +1,8 @@
 """Review and approve pending AI-generated coaching responses."""
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import streamlit as st
 from datetime import datetime, timezone
 

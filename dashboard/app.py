@@ -1,5 +1,11 @@
 """Streamlit dashboard for the Coach Wes Coaching System."""
 
+import os
+import sys
+
+# Ensure the project root is on the Python path so imports like `db`, `services` work
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import streamlit as st
 
 st.set_page_config(
