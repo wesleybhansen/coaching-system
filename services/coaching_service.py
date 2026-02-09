@@ -182,22 +182,25 @@ def process_email(email_data: dict) -> dict | None:
     # Find or create user
     user = db.get_user_by_email(from_email)
     if not user:
-        # Auto-onboard: create user and send onboarding email
+        # Auto-create user and draft onboarding for review
         first_name = email_data.get("from_name", "").split()[0] if email_data.get("from_name") else "there"
         user = db.create_user(from_email, first_name)
-        logger.info(f"New user auto-onboarded: {from_email}")
+        logger.info(f"New user created: {from_email}")
 
-        sent_msg_id = gmail_service.send_onboarding(from_email, first_name)
+        onboarding_body = gmail_service.get_onboarding_body(first_name)
 
-        # Log the onboarding conversation
+        # Create conversation as Pending Review so Wes can approve it first
         db.create_conversation({
             "user_id": user["id"],
             "type": "Onboarding",
             "user_message_raw": raw_body,
+            "user_message_parsed": raw_body,
+            "ai_response": onboarding_body,
+            "confidence": 8,
             "gmail_message_id": message_id or None,
-            "status": "Sent",
-            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "status": "Pending Review",
         })
+        logger.info(f"Onboarding draft created for {from_email} — awaiting review")
         return None
 
     # Parse email content
@@ -208,42 +211,34 @@ def process_email(email_data: dict) -> dict | None:
 
     if intent == "pause":
         db.update_user(user["id"], {"status": "Paused"})
-        gmail_service.send_pause_confirmation(
-            from_email,
-            in_reply_to=email_data.get("message_id"),
-            references=email_data.get("references"),
-        )
+        pause_body = "No problem - I'll pause check-ins for now. Just reply 'resume' whenever you're ready to pick back up.\n\nWes"
         db.create_conversation({
             "user_id": user["id"],
             "type": "Follow-up",
             "user_message_raw": raw_body,
             "user_message_parsed": parsed,
+            "ai_response": pause_body,
+            "confidence": 9,
             "gmail_message_id": message_id or None,
-            "status": "Sent",
-            "sent_response": "Pause confirmation sent",
-            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "status": "Pending Review",
         })
-        logger.info(f"User {from_email} paused")
+        logger.info(f"User {from_email} requested pause — awaiting review")
         return None
 
     if intent == "resume":
         db.update_user(user["id"], {"status": "Active"})
-        gmail_service.send_resume_confirmation(
-            from_email,
-            in_reply_to=email_data.get("message_id"),
-            references=email_data.get("references"),
-        )
+        resume_body = "Welcome back! I'll resume the regular check-ins. You'll hear from me soon.\n\nWes"
         db.create_conversation({
             "user_id": user["id"],
             "type": "Follow-up",
             "user_message_raw": raw_body,
             "user_message_parsed": parsed,
+            "ai_response": resume_body,
+            "confidence": 9,
             "gmail_message_id": message_id or None,
-            "status": "Sent",
-            "sent_response": "Resume confirmation sent",
-            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "status": "Pending Review",
         })
-        logger.info(f"User {from_email} resumed")
+        logger.info(f"User {from_email} requested resume — awaiting review")
         return None
 
     # Determine message type

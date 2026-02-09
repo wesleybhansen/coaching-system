@@ -189,6 +189,32 @@ Wes"""
     )
 
 
+def get_onboarding_body(first_name: str) -> str:
+    """Return the onboarding email body text without sending."""
+    return f"""Hey {first_name},
+
+Welcome to coaching. Here's how this works:
+
+A couple times a week, I'll check in with a few quick questions about what you're working on. You reply (should take about 5 minutes), and I'll send back focused feedback - usually within a day or so.
+
+That's it. Short exchanges, consistent momentum.
+
+Before we start, I need some context from you. Reply to this email with:
+
+1. Where you're at right now:
+   - Still figuring out the idea (Ideation)
+   - Testing if people want this (Early Validation)
+   - Have some traction, refining the model (Late Validation)
+   - Growing and scaling (Growth)
+2. Your biggest challenge or question right now
+3. If you have one, your current business idea (2-3 sentences is fine; if you don't yet have an idea, this is where we'll get started)
+
+Once I hear back, we'll get started.
+
+Talk soon,
+Wes"""
+
+
 def send_onboarding(to_email: str, first_name: str):
     """Send the onboarding email to a new user."""
     body = f"""Hey {first_name},
