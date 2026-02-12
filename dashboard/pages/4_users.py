@@ -10,6 +10,10 @@ from db import supabase_client as db
 st.set_page_config(page_title="Users", layout="wide")
 st.title("Users")
 
+# Day options for checkin_days multiselect
+DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+DAY_OPTIONS_LOWER = [d.lower() for d in DAY_OPTIONS]
+
 # Filter
 status_filter = st.selectbox("Filter by status", ["All", "Active", "Paused", "Silent", "Onboarding"])
 
@@ -26,6 +30,13 @@ with st.expander("Add new user"):
         new_name = st.text_input("First name")
         new_stage = st.selectbox("Stage", ["Ideation", "Early Validation", "Late Validation", "Growth"])
         new_idea = st.text_area("Business idea", height=80)
+        new_checkin_days = st.multiselect(
+            "Check-in days (max 3, leave empty for system default)",
+            options=DAY_OPTIONS,
+            default=[],
+            max_selections=3,
+            key="new_user_checkin_days",
+        )
         submitted = st.form_submit_button("Add User")
 
         if submitted and new_email:
@@ -36,10 +47,12 @@ with st.expander("Add new user"):
                 db.create_user(new_email, new_name)
                 user = db.get_user_by_email(new_email)
                 if user:
+                    checkin_days_value = ",".join(d.lower() for d in new_checkin_days) if new_checkin_days else None
                     db.update_user(user["id"], {
                         "stage": new_stage,
                         "business_idea": new_idea if new_idea else None,
                         "status": "Active",
+                        "checkin_days": checkin_days_value,
                     })
                 st.success(f"User {new_email} added!")
                 st.rerun()
@@ -77,7 +90,22 @@ for user in users:
                 edit_challenge = st.text_area("Current challenge", value=user.get("current_challenge", "") or "", height=80, key=f"challenge_{user['id']}")
                 edit_notes = st.text_area("Notes", value=user.get("notes", "") or "", height=80, key=f"notes_{user['id']}")
 
+                # Parse current checkin_days from comma-separated string
+                user_checkin_str = user.get("checkin_days") or ""
+                current_checkin = [d.strip().capitalize() for d in user_checkin_str.split(",") if d.strip()] if user_checkin_str else []
+                # Filter to valid options only
+                current_checkin = [d for d in current_checkin if d in DAY_OPTIONS]
+
+                edit_checkin_days = st.multiselect(
+                    "Check-in days (max 3, leave empty for system default)",
+                    options=DAY_OPTIONS,
+                    default=current_checkin,
+                    max_selections=3,
+                    key=f"checkin_days_{user['id']}",
+                )
+
             if st.form_submit_button("Save Changes"):
+                checkin_days_value = ",".join(d.lower() for d in edit_checkin_days) if edit_checkin_days else None
                 db.update_user(user["id"], {
                     "first_name": edit_name,
                     "stage": edit_stage,
@@ -85,6 +113,7 @@ for user in users:
                     "business_idea": edit_idea or None,
                     "current_challenge": edit_challenge or None,
                     "notes": edit_notes or None,
+                    "checkin_days": checkin_days_value,
                 })
                 st.success("User updated!")
                 st.rerun()
@@ -94,5 +123,7 @@ for user in users:
             st.markdown("**Journey Summary:**")
             st.text(user["summary"])
 
+        st.write(f"**Satisfaction score:** {user.get('satisfaction_score') if user.get('satisfaction_score') is not None else 'N/A'}")
+        st.write(f"**Onboarding step:** {user.get('onboarding_step') if user.get('onboarding_step') is not None else 'N/A'}")
         st.write(f"**Last response:** {(user.get('last_response_date') or 'Never')[:19]}")
         st.write(f"**Joined:** {(user.get('created_at') or '')[:10]}")

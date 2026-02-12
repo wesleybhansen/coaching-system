@@ -1,8 +1,8 @@
 name: Check In
 on:
   schedule:
-    # Tuesday and Friday at 9am Eastern (14:00 UTC)
-    - cron: "0 14 * * 2,5"
+    # Run daily at 9am Eastern (14:00 UTC) — user schedules handled in code
+    - cron: "0 14 * * *"
   workflow_dispatch:
 
 jobs:

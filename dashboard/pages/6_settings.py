@@ -35,19 +35,19 @@ st.subheader("Check-in Schedule")
 
 col1, col2 = st.columns(2)
 with col1:
-    days_str = settings.get("check_in_days", "tue,fri")
+    days_str = settings.get("default_checkin_days", "tue,fri")
     day_options = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     current_days = [d.strip().lower() for d in days_str.split(",")]
     selected_days = st.multiselect(
-        "Check-in days",
+        "Default check-in days",
         options=day_options,
         default=current_days,
         format_func=lambda x: x.capitalize(),
     )
     new_days = ",".join(selected_days)
     if new_days != days_str:
-        db.set_setting("check_in_days", new_days)
-        st.success("Check-in days updated")
+        db.set_setting("default_checkin_days", new_days)
+        st.success("Default check-in days updated")
 
 with col2:
     current_hour = int(settings.get("check_in_hour", "9"))
@@ -55,6 +55,35 @@ with col2:
     if new_hour != current_hour:
         db.set_setting("check_in_hour", str(new_hour))
         st.success("Check-in hour updated")
+
+max_days_val = int(settings.get("max_checkin_days_per_week", "3"))
+new_max_days = st.number_input(
+    "Max check-in days per week",
+    min_value=1,
+    max_value=7,
+    value=max_days_val,
+)
+if new_max_days != max_days_val:
+    db.set_setting("max_checkin_days_per_week", str(new_max_days))
+    st.success("Max check-in days per week updated")
+
+st.caption("Individual users can override the default check-in days from the Users page.")
+
+# ── Thread Cap ────────────────────────────────────────────
+st.subheader("Thread Cap")
+
+max_replies_val = int(settings.get("max_thread_replies", "4"))
+new_max_replies = st.number_input(
+    "Max thread replies",
+    min_value=1,
+    max_value=10,
+    value=max_replies_val,
+)
+if new_max_replies != max_replies_val:
+    db.set_setting("max_thread_replies", str(new_max_replies))
+    st.success("Max thread replies updated")
+
+st.caption("Maximum follow-up replies per check-in cycle. After this cap, the system waits for the next check-in.")
 
 # ── Processing Schedule ───────────────────────────────────
 st.subheader("Email Processing")
@@ -105,6 +134,17 @@ if new_max_p != max_p:
     db.set_setting("max_response_paragraphs", str(new_max_p))
     st.success("Max paragraphs updated")
 
+# ── Notifications ─────────────────────────────────────────
+st.subheader("Notifications")
+
+notif_email = settings.get("notification_email", "coachwes@thelaunchpadincubator.com")
+new_notif_email = st.text_input("Notification email", value=notif_email)
+if new_notif_email != notif_email:
+    db.set_setting("notification_email", new_notif_email)
+    st.success("Notification email updated")
+
+st.caption("Error alerts will be sent to this email.")
+
 # ── Gmail Status ──────────────────────────────────────────
 st.subheader("Gmail Connection")
 try:
@@ -113,4 +153,3 @@ try:
     st.success("Gmail connection: OK")
 except Exception as e:
     st.error(f"Gmail connection failed: {e}")
-

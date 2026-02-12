@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -60,6 +62,43 @@ def detect_intent(message: str) -> str:
     return "normal"
 
 
+# ── Stage-Specific Coaching Prompts ───────────────────────────
+
+STAGE_PROMPTS = {
+    "Ideation": """## Stage-Specific Guidance (Ideation)
+This user is in the Ideation stage. They need help with:
+- Finding problems worth solving through conversations (not brainstorming)
+- Getting out of their head and talking to real people
+- Picking ONE idea to explore rather than juggling many
+- Having their first customer discovery conversations
+Key challenge: They may be stuck in analysis paralysis or avoiding real conversations.""",
+
+    "Early Validation": """## Stage-Specific Guidance (Early Validation)
+This user is in Early Validation. They need help with:
+- Conducting structured problem interviews (not just casual chats)
+- Testing willingness to pay before building
+- Creating a minimum viable offer (manual before automated)
+- Getting their first paying customer
+Key challenge: They may want to skip ahead to building or get distracted by marketing too early.""",
+
+    "Late Validation": """## Stage-Specific Guidance (Late Validation)
+This user is in Late Validation. They need help with:
+- Reducing churn and increasing customer value
+- Systematizing what's working before scaling
+- Understanding their unit economics
+- Focusing on ONE growth channel before expanding
+Key challenge: They may be doing too many things at once or avoiding hard conversations about churn.""",
+
+    "Growth": """## Stage-Specific Guidance (Growth)
+This user is in the Growth stage. They need help with:
+- Hiring and delegation decisions
+- Building repeatable sales processes
+- Managing team and operations at scale
+- Knowing when and how to raise capital
+Key challenge: They may be building features instead of selling, or spreading too thin across initiatives.""",
+}
+
+
 # ── Context Building ───────────────────────────────────────────
 
 def build_assistant_context(user: dict, parsed_message: str, message_type: str = "check-in response") -> str:
@@ -80,14 +119,21 @@ def build_assistant_context(user: dict, parsed_message: str, message_type: str =
         for m in model_responses
     ) if model_responses else "No model responses available"
 
-    # Recent corrections
-    corrections = db.get_recent_corrections(limit=10)
+    # Recent corrections (scoped to user's stage)
+    corrections = db.get_recent_corrections(limit=10, stage=user.get("stage"))
     corrected_text = "\n\n---\n\n".join(
         f"AI originally wrote: {c['ai_response']}\nWes corrected it to: {c['corrected_response']}\nBecause: {c.get('correction_notes', 'N/A')}"
         for c in corrections
     ) if corrections else "No corrections to learn from yet"
 
-    context = f"""## Context About This User
+    # Available resources for their stage
+    resource_list = db.get_resource_list_for_prompt(user.get("stage"))
+
+    stage_prompt = STAGE_PROMPTS.get(user.get("stage", "Ideation"), "")
+
+    context = f"""{stage_prompt}
+
+## Context About This User
 Name: {user.get('first_name', 'Unknown')}
 Stage: {user.get('stage', 'Ideation')}
 Business Idea: {user.get('business_idea') or 'Not specified yet'}
@@ -102,6 +148,9 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 ## Their Current Message
 {parsed_message}
 
+## Available Resources (reference by name only — do NOT include links or URLs)
+{resource_list}
+
 ## Model Responses (examples of your ideal coaching style)
 {model_text}
 
@@ -109,7 +158,7 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 {corrected_text}
 
 ## Instructions
-Write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
+Write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource BY NAME (e.g. "Lecture 7 walks through this" or "Chapter 3 of the Launch System covers this well"). NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
 
     return context
 
@@ -185,6 +234,7 @@ def process_email(email_data: dict) -> dict | None:
         # Auto-create user and draft onboarding for review
         first_name = email_data.get("from_name", "").split()[0] if email_data.get("from_name") else "there"
         user = db.create_user(from_email, first_name)
+        db.update_user(user["id"], {"onboarding_step": 1})
         logger.info(f"New user created: {from_email}")
 
         onboarding_body = gmail_service.get_onboarding_body(first_name)
@@ -202,6 +252,51 @@ def process_email(email_data: dict) -> dict | None:
         })
         logger.info(f"Onboarding draft created for {from_email} — awaiting review")
         return None
+
+    # Handle multi-step onboarding
+    if user.get("status") == "Onboarding":
+        onboarding_step = user.get("onboarding_step", 1)
+        parsed = parse_email(raw_body)
+
+        if onboarding_step <= 1:
+            # They replied with their stage/idea — process it and ask for challenge
+            followup_body = f"Thanks {user.get('first_name', 'there')}! That helps a lot.\n\nOne more thing before we get started: What's the single biggest challenge or question you're facing right now with your business?\n\nOnce I know that, I'll start sending you focused check-ins."
+            db.create_conversation({
+                "user_id": user["id"],
+                "type": "Onboarding",
+                "user_message_raw": raw_body,
+                "user_message_parsed": parsed,
+                "ai_response": followup_body,
+                "confidence": 8,
+                "gmail_message_id": message_id or None,
+                "status": "Pending Review",
+            })
+            db.update_user(user["id"], {"onboarding_step": 2})
+            logger.info(f"Onboarding step 2 for {from_email} — awaiting review")
+            return None
+        else:
+            # They replied with their challenge — activate them
+            db.update_user(user["id"], {
+                "status": "Active",
+                "onboarding_step": 3,
+                "current_challenge": parsed[:500],
+                "last_response_date": datetime.now(timezone.utc).isoformat(),
+                "gmail_message_id": email_data.get("message_id"),
+            })
+
+            welcome_body = f"You're all set, {user.get('first_name', 'there')}. I'll start checking in regularly.\n\nIn the meantime, here's your first nudge: based on what you told me, what's the ONE thing you could do this week to make progress on that challenge?\n\nKeep it small and specific."
+            db.create_conversation({
+                "user_id": user["id"],
+                "type": "Onboarding",
+                "user_message_raw": raw_body,
+                "user_message_parsed": parsed,
+                "ai_response": welcome_body,
+                "confidence": 8,
+                "gmail_message_id": message_id or None,
+                "status": "Pending Review",
+            })
+            logger.info(f"Onboarding complete for {from_email} — activated, awaiting review")
+            return None
 
     # Parse email content
     parsed = parse_email(raw_body)
@@ -241,12 +336,31 @@ def process_email(email_data: dict) -> dict | None:
         logger.info(f"User {from_email} requested resume — awaiting review")
         return None
 
+    # Check thread reply cap (max 4 follow-up replies per check-in cycle)
+    max_thread_replies = int(db.get_setting("max_thread_replies", "4"))
+    current_replies = db.count_thread_replies(user["id"])
+    if current_replies >= max_thread_replies:
+        logger.info(f"Thread reply cap ({max_thread_replies}) reached for {from_email}, skipping response")
+        # Still update the user's last_response_date so we know they're active
+        db.update_user(user["id"], {
+            "last_response_date": datetime.now(timezone.utc).isoformat(),
+            "gmail_message_id": email_data.get("message_id"),
+        })
+        return None
+
     # Determine message type
     recent = db.get_recent_conversations(user["id"], limit=1)
     message_type = "follow-up question" if recent else "check-in response"
 
     # Generate and evaluate response
     result = generate_and_evaluate(user, parsed, message_type)
+
+    # Analyze member satisfaction/engagement
+    try:
+        satisfaction = openai_service.analyze_satisfaction(parsed)
+    except Exception as e:
+        logger.warning(f"Failed to analyze satisfaction for {from_email}: {e}")
+        satisfaction = None
 
     # Store conversation
     conversation = db.create_conversation({
@@ -265,6 +379,7 @@ def process_email(email_data: dict) -> dict | None:
         "stage_changed": result.get("stage_changed", False),
         "approved_by": result.get("approved_by"),
         "approved_at": datetime.now(timezone.utc).isoformat() if result["status"] == "Approved" else None,
+        "satisfaction_score": satisfaction,
     })
 
     # Update user metadata
@@ -275,9 +390,26 @@ def process_email(email_data: dict) -> dict | None:
     if email_data.get("in_reply_to"):
         updates["gmail_thread_id"] = email_data["in_reply_to"]
 
-    # Stage change
+    # Check for stage change milestone
     if result.get("stage_changed") and result.get("detected_stage"):
         updates["stage"] = result["detected_stage"]
+        # Log milestone for celebration in next interaction
+        milestone_note = f"MILESTONE: Progressed from {user.get('stage')} to {result['detected_stage']}"
+        current_summary = user.get("summary") or ""
+        date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        updates["summary"] = f"{current_summary}\n\n{date_prefix}: {milestone_note}".strip()
+
+    # Update user satisfaction score (rolling average)
+    if satisfaction is not None:
+        current_satisfaction = user.get("satisfaction_score")
+        if current_satisfaction is not None:
+            try:
+                new_satisfaction = round((float(current_satisfaction) * 0.7) + (satisfaction * 0.3), 1)
+            except (ValueError, TypeError):
+                new_satisfaction = satisfaction
+        else:
+            new_satisfaction = satisfaction
+        updates["satisfaction_score"] = new_satisfaction
 
     db.update_user(user["id"], updates)
 

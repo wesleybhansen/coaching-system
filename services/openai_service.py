@@ -1,11 +1,15 @@
 import json
 import logging
 import os
+import time
 from openai import OpenAI
 
 import config
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_DELAY_BASE = 2  # seconds, doubles each retry
 
 _client = None
 _instructions = None
@@ -30,30 +34,41 @@ def _get_instructions() -> str:
     return _instructions
 
 
+def _retry_with_backoff(func, *args, **kwargs):
+    """Retry an OpenAI API call with exponential backoff."""
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAY_BASE * (2 ** attempt)
+                logger.warning(f"OpenAI API call failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                time.sleep(delay)
+            else:
+                logger.error(f"OpenAI API call failed after {MAX_RETRIES} attempts: {e}")
+    raise last_error
+
+
 def generate_response(user_context: str) -> str:
-    """Generate a coaching response using the Responses API with file_search.
-
-    Args:
-        user_context: Formatted string with user info, history, model responses,
-                      corrections, and the current message.
-
-    Returns:
-        The assistant's text response (natural language, not JSON).
-    """
+    """Generate a coaching response using the Responses API with file_search."""
     client = get_client()
 
-    response = client.responses.create(
-        model="gpt-4o",
-        instructions=_get_instructions(),
-        input=user_context,
-        tools=[{
-            "type": "file_search",
-            "vector_store_ids": [config.VECTOR_STORE_ID],
-        }],
-        temperature=0.7,
-    )
+    def _call():
+        response = client.responses.create(
+            model="gpt-4o",
+            instructions=_get_instructions(),
+            input=user_context,
+            tools=[{
+                "type": "file_search",
+                "vector_store_ids": [config.VECTOR_STORE_ID],
+            }],
+            temperature=0.7,
+        )
+        return response.output_text
 
-    return response.output_text
+    return _retry_with_backoff(_call)
 
 
 def evaluate_response(user_message: str, ai_response: str, user_stage: str,
@@ -72,14 +87,16 @@ def evaluate_response(user_message: str, ai_response: str, user_stage: str,
         user_stage=user_stage,
     )
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": full_prompt}],
-        temperature=0.2,
-        response_format={"type": "json_object"},
-    )
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": full_prompt}],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        return response.choices[0].message.content
 
-    text = response.choices[0].message.content
+    text = _retry_with_backoff(_call)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -113,25 +130,28 @@ Coach's Response:
 
 Provide only the new summary text to append (1-2 sentences). Focus on key progress, challenges, or direction changes."""
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.5,
-        max_tokens=200,
-    )
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=200,
+        )
+        return response.choices[0].message.content.strip()
 
-    return response.choices[0].message.content.strip()
+    return _retry_with_backoff(_call)
 
 
 def parse_email_fallback(raw_email: str) -> str:
     """Fallback email parser using GPT-4o-mini when the deterministic parser returns empty."""
     client = get_client()
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{
-            "role": "user",
-            "content": f"""Extract only the user's actual message from this email. Remove:
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{
+                "role": "user",
+                "content": f"""Extract only the user's actual message from this email. Remove:
 - Email signatures
 - Previous quoted messages (lines starting with >)
 - "On [date], [person] wrote:" headers
@@ -143,9 +163,71 @@ Return only the user's new content, preserving their formatting.
 
 Email:
 {raw_email}"""
-        }],
-        temperature=0.1,
-        max_tokens=2000,
-    )
+            }],
+            temperature=0.1,
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content.strip()
 
-    return response.choices[0].message.content.strip()
+    return _retry_with_backoff(_call)
+
+
+def generate_checkin_question(user_context: str) -> str:
+    """Generate a personalized check-in question based on user context."""
+    client = get_client()
+
+    prompt = f"""You are Wes, an entrepreneurship coach. Generate a personalized check-in message for this member.
+Keep it short (2-4 sentences). Reference what they've been working on recently. Ask a specific question that moves them forward.
+Do NOT use bullet points or numbered lists. Write in a natural, conversational tone.
+Do NOT include a sign-off like "Wes" - that will be added automatically.
+
+{user_context}"""
+
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=300,
+        )
+        return response.choices[0].message.content.strip()
+
+    return _retry_with_backoff(_call)
+
+
+def analyze_satisfaction(user_message: str) -> float:
+    """Analyze the satisfaction/engagement level of a user's reply.
+
+    Returns a score from 1-10:
+    - 1-3: Disengaged (short, dismissive, frustrated)
+    - 4-6: Neutral (going through the motions)
+    - 7-10: Engaged (detailed, enthusiastic, taking action)
+    """
+    client = get_client()
+
+    prompt = f"""Analyze this coaching program member's email reply for engagement and satisfaction level.
+
+Reply: {user_message}
+
+Score from 1-10 where:
+- 1-3: Disengaged, frustrated, or dismissive (e.g., "ok", "thanks", "not really")
+- 4-6: Neutral, going through the motions (e.g., brief answers without enthusiasm)
+- 7-10: Engaged, taking action, detailed responses, showing progress
+
+Return ONLY a number (1-10), nothing else."""
+
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=5,
+        )
+        text = response.choices[0].message.content.strip()
+        try:
+            score = float(text)
+            return max(1.0, min(10.0, score))
+        except ValueError:
+            return 5.0
+
+    return _retry_with_backoff(_call)
