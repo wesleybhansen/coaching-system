@@ -174,6 +174,61 @@ with ft_control_cols[1]:
         help="Export will skip if fewer corrections exist than this threshold",
     )
 
+with st.expander("📖 How to use the fine-tuning file after export"):
+    st.markdown("""
+**What is fine-tuning?**
+
+Fine-tuning takes a base model (like GPT-4o-mini) and trains it on your corrected coaching
+responses so it learns *your* voice, style, and approach. The result is a custom model that
+gives better responses out of the box — fewer corrections needed over time.
+
+---
+
+**Step-by-step guide:**
+
+**1. Build your dataset (you're here!)**
+- Review AI responses on the **Pending Review** and **Flagged** pages
+- When a response needs changes, edit it and save — that creates a correction
+- Aim for **50+ corrections** minimum (more is better — 100+ is ideal)
+- Make sure corrections cover a variety of topics, stages, and response types
+
+**2. Export and download**
+- Set your filename and click **Export Fine-Tuning Data** below
+- Click **Download JSONL File** to save it to your computer
+
+**3. Upload to OpenAI**
+- Go to [platform.openai.com/finetune](https://platform.openai.com/finetune)
+- Click **Create** in the top right
+- Select **gpt-4o-mini-2024-07-18** as the base model (best cost/quality balance)
+- Upload your `.jsonl` file
+- Click **Create** to start the fine-tuning job
+
+*Alternatively, use the CLI:*
+```bash
+pip install openai
+openai api fine_tuning.jobs.create -t finetune_data.jsonl -m gpt-4o-mini-2024-07-18
+```
+
+**4. Wait for training**
+- Fine-tuning typically takes **15–45 minutes** depending on dataset size
+- You'll get an email from OpenAI when it's done
+- The new model will appear at [platform.openai.com/finetune](https://platform.openai.com/finetune)
+
+**5. Switch to your fine-tuned model**
+- Copy your fine-tuned model ID (looks like `ft:gpt-4o-mini-2024-07-18:your-org::abc123`)
+- Go to the **Settings** page in this dashboard
+- Update the **Model** setting to your fine-tuned model ID
+- The system will now use your custom model for all new responses
+
+---
+
+**Tips:**
+- **Quality over quantity** — 50 great corrections beat 200 sloppy ones
+- **Re-fine-tune periodically** — as you make more corrections, export and fine-tune again
+- **Cost** — fine-tuning GPT-4o-mini is very affordable (~$0.80 per 100 examples)
+- **Keep the base model as fallback** — save the original model ID in case you want to switch back
+""")
+
 if st.button("🧠 Export Fine-Tuning Data", use_container_width=True, help="Generate JSONL file for OpenAI fine-tuning"):
     if usable == 0:
         st.error("No usable corrections found. Make some corrections on the Pending Review or Flagged pages first.")
@@ -190,11 +245,6 @@ if st.button("🧠 Export Fine-Tuning Data", use_container_width=True, help="Gen
                         f"Exported **{stats['exported']}** training examples to `{output_filename}`  \n"
                         f"({stats['skipped']} skipped — missing corrected response)"
                     )
-                    st.code(
-                        f"# To fine-tune, upload the file to OpenAI:\n"
-                        f"openai api fine_tunes.create -t {output_filename} -m gpt-4o-mini-2024-07-18",
-                        language="bash",
-                    )
 
                     # Offer download
                     with open(output_path, "r") as f:
@@ -205,6 +255,7 @@ if st.button("🧠 Export Fine-Tuning Data", use_container_width=True, help="Gen
                         file_name=output_filename,
                         mime="application/jsonl",
                     )
+                    st.info("👆 Download the file, then follow the instructions above to upload it to OpenAI and start fine-tuning.")
                 elif stats["total"] < min_corrections:
                     st.warning(
                         f"Only {stats['total']} corrections found, but minimum is set to {min_corrections}. "
