@@ -157,23 +157,6 @@ if usable < 10:
         "to build up your training dataset. OpenAI recommends at least 50 examples."
     )
 
-# Export controls
-ft_control_cols = st.columns([2, 1])
-with ft_control_cols[0]:
-    output_filename = st.text_input(
-        "Output filename",
-        value="finetune_data.jsonl",
-        help="File will be saved in your project root directory",
-    )
-with ft_control_cols[1]:
-    min_corrections = st.number_input(
-        "Minimum corrections required",
-        min_value=0,
-        max_value=500,
-        value=0,
-        help="Export will skip if fewer corrections exist than this threshold",
-    )
-
 with st.expander("📖 How to use the fine-tuning file after export"):
     st.markdown("""
 **What is fine-tuning?**
@@ -228,6 +211,23 @@ openai api fine_tuning.jobs.create -t finetune_data.jsonl -m gpt-4o-mini-2024-07
 - **Cost** — fine-tuning GPT-4o-mini is very affordable (~$0.80 per 100 examples)
 - **Keep the base model as fallback** — save the original model ID in case you want to switch back
 """)
+
+# Export controls
+ft_control_cols = st.columns([2, 1])
+with ft_control_cols[0]:
+    output_filename = st.text_input(
+        "Output filename",
+        value="finetune_data.jsonl",
+        help="File will be saved in your project root directory",
+    )
+with ft_control_cols[1]:
+    min_corrections = st.number_input(
+        "Minimum corrections required",
+        min_value=0,
+        max_value=500,
+        value=50,
+        help="Export will skip if fewer corrections exist than this threshold",
+    )
 
 if st.button("🧠 Export Fine-Tuning Data", use_container_width=True, help="Generate JSONL file for OpenAI fine-tuning"):
     if usable == 0:
