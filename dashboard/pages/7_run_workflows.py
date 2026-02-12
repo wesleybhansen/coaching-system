@@ -20,31 +20,31 @@ status_cols = st.columns(4)
 with status_cols[0]:
     try:
         db.get_setting("global_auto_approve_threshold")
-        st.metric("Database", "✅ Connected")
+        st.write("✅ **Database** — Connected")
     except Exception:
-        st.metric("Database", "❌ Error")
+        st.write("❌ **Database** — Error")
 
 with status_cols[1]:
     try:
         from services import gmail_service
         gmail_service._imap_connect().logout()
-        st.metric("Gmail", "✅ Connected")
+        st.write("✅ **Gmail** — Connected")
     except Exception:
-        st.metric("Gmail", "❌ Error")
+        st.write("❌ **Gmail** — Error")
 
 with status_cols[2]:
     import platform
     py_ver = platform.python_version()
     ok = tuple(int(x) for x in py_ver.split(".")[:2]) >= (3, 9)
-    st.metric("Python", f"{'✅' if ok else '⚠️'} {py_ver}")
+    st.write(f"{'✅' if ok else '⚠️'} **Python** — {py_ver}")
 
 with status_cols[3]:
     # Check if migration has been applied by looking for a new column
     try:
         users = db.get_client().table("users").select("checkin_days").limit(1).execute()
-        st.metric("Migration v2", "✅ Applied")
+        st.write("✅ **Migration v2** — Applied")
     except Exception:
-        st.metric("Migration v2", "❌ Not applied")
+        st.write("❌ **Migration v2** — Not applied")
 
 # ── Automated Schedule ───────────────────────────────────────
 st.divider()
