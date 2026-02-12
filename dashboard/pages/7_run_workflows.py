@@ -129,6 +129,92 @@ with col5:
             except Exception as e:
                 st.error(f"Failed: {e}")
 
+# ── Fine-Tuning Export ───────────────────────────────────────
+st.divider()
+st.subheader("Fine-Tuning Export")
+st.markdown(
+    "Export your corrected coaching responses as an OpenAI fine-tuning dataset. "
+    "The more corrections you've made, the better the fine-tuned model will be."
+)
+
+# Show current correction count
+try:
+    corrections = db.get_all_corrections()
+    total_corrections = len(corrections)
+    usable = sum(1 for c in corrections if (c.get("corrected_response") or "").strip())
+except Exception:
+    total_corrections = 0
+    usable = 0
+
+ft_cols = st.columns(3)
+ft_cols[0].metric("Total Corrections", total_corrections)
+ft_cols[1].metric("Usable for Training", usable)
+ft_cols[2].metric("Recommended Minimum", "50+", help="OpenAI recommends at least 50 examples for fine-tuning, though 10+ can work")
+
+if usable < 10:
+    st.warning(
+        f"You have **{usable}** usable corrections. Keep reviewing and correcting AI responses "
+        "to build up your training dataset. OpenAI recommends at least 50 examples."
+    )
+
+# Export controls
+ft_control_cols = st.columns([2, 1])
+with ft_control_cols[0]:
+    output_filename = st.text_input(
+        "Output filename",
+        value="finetune_data.jsonl",
+        help="File will be saved in your project root directory",
+    )
+with ft_control_cols[1]:
+    min_corrections = st.number_input(
+        "Minimum corrections required",
+        min_value=0,
+        max_value=500,
+        value=0,
+        help="Export will skip if fewer corrections exist than this threshold",
+    )
+
+if st.button("🧠 Export Fine-Tuning Data", use_container_width=True, help="Generate JSONL file for OpenAI fine-tuning"):
+    if usable == 0:
+        st.error("No usable corrections found. Make some corrections on the Pending Review or Flagged pages first.")
+    else:
+        with st.spinner("Exporting fine-tuning data..."):
+            try:
+                from scripts.export_finetune_data import export_finetune_data
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                output_path = os.path.join(project_root, output_filename)
+                stats = export_finetune_data(output_path, min_corrections=min_corrections)
+
+                if stats["exported"] > 0:
+                    st.success(
+                        f"Exported **{stats['exported']}** training examples to `{output_filename}`  \n"
+                        f"({stats['skipped']} skipped — missing corrected response)"
+                    )
+                    st.code(
+                        f"# To fine-tune, upload the file to OpenAI:\n"
+                        f"openai api fine_tunes.create -t {output_filename} -m gpt-4o-mini-2024-07-18",
+                        language="bash",
+                    )
+
+                    # Offer download
+                    with open(output_path, "r") as f:
+                        file_contents = f.read()
+                    st.download_button(
+                        label="📥 Download JSONL File",
+                        data=file_contents,
+                        file_name=output_filename,
+                        mime="application/jsonl",
+                    )
+                elif stats["total"] < min_corrections:
+                    st.warning(
+                        f"Only {stats['total']} corrections found, but minimum is set to {min_corrections}. "
+                        "Lower the threshold or make more corrections."
+                    )
+                else:
+                    st.warning("No examples could be exported. Check that corrections have a corrected_response field.")
+            except Exception as e:
+                st.error(f"Export failed: {e}")
+
 # ── Workflow Run History ─────────────────────────────────────
 st.divider()
 st.subheader("Workflow Run History")
