@@ -333,12 +333,18 @@ def start_workflow_run(workflow_name: str) -> str:
     return resp.data[0]["id"] if resp.data else None
 
 
-def complete_workflow_run(run_id: str, items_processed: int = 0):
-    get_client().table("workflow_runs").update({
-        "status": "completed",
+def complete_workflow_run(run_id: str, items_processed: int = 0,
+                          items_failed: int = 0, items_skipped: int = 0):
+    status = "completed_with_errors" if items_failed > 0 else "completed"
+    update_data = {
+        "status": status,
         "completed_at": datetime.now(timezone.utc).isoformat(),
         "items_processed": items_processed,
-    }).eq("id", run_id).execute()
+    }
+    # Store failure/skip info in error_message field if any failures occurred
+    if items_failed > 0 or items_skipped > 0:
+        update_data["error_message"] = f"{items_failed} failed, {items_skipped} skipped"
+    get_client().table("workflow_runs").update(update_data).eq("id", run_id).execute()
 
 
 def fail_workflow_run(run_id: str, error_message: str):

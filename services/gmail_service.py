@@ -12,6 +12,26 @@ import config
 
 logger = logging.getLogger(__name__)
 
+MAX_RETRIES = 3
+RETRY_DELAY_BASE = 2  # seconds, doubles each retry
+
+
+def _retry(func, *args, **kwargs):
+    """Retry a Gmail operation with exponential backoff."""
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAY_BASE * (2 ** attempt)
+                logger.warning(f"Gmail operation failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                time.sleep(delay)
+            else:
+                logger.error(f"Gmail operation failed after {MAX_RETRIES} attempts: {e}")
+    raise last_error
+
 # Emails from these patterns are ignored (no-reply, system notifications, etc.)
 IGNORED_SENDERS = [
     "noreply", "no-reply", "no_reply",
@@ -46,78 +66,101 @@ def _smtp_connect():
 
 def fetch_unread_emails(max_results: int = 50) -> list[dict]:
     """Fetch unread emails from inbox, excluding emails from our own address."""
-    conn = _imap_connect()
-    try:
-        conn.select("INBOX")
-        _, msg_nums = conn.search(None, "UNSEEN")
-        if not msg_nums[0]:
-            return []
+    def _fetch():
+        conn = _imap_connect()
+        try:
+            conn.select("INBOX")
+            _, msg_nums = conn.search(None, "UNSEEN")
+            if not msg_nums[0]:
+                return []
 
-        message_ids = msg_nums[0].split()[:max_results]
-        emails = []
+            message_ids = msg_nums[0].split()[:max_results]
+            emails = []
 
-        for msg_id in message_ids:
-            _, msg_data = conn.fetch(msg_id, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
+            for msg_id in message_ids:
+                _, msg_data = conn.fetch(msg_id, "(RFC822)")
+                raw = msg_data[0][1]
+                msg = email.message_from_bytes(raw)
 
-            from_addr = parseaddr(msg["From"])[1].lower()
-            if from_addr == config.GMAIL_ADDRESS.lower():
-                continue
-            if _is_ignored_sender(from_addr):
-                # Auto-mark system emails as read so they don't pile up
-                conn.store(msg_id, "+FLAGS", "\\Seen")
-                logger.info(f"Ignoring system email from {from_addr}")
-                continue
+                from_addr = parseaddr(msg["From"])[1].lower()
+                if from_addr == config.GMAIL_ADDRESS.lower():
+                    continue
+                if _is_ignored_sender(from_addr):
+                    # Auto-mark system emails as read so they don't pile up
+                    conn.store(msg_id, "+FLAGS", "\\Seen")
+                    logger.info(f"Ignoring system email from {from_addr}")
+                    continue
 
-            body = _extract_body(msg)
-            message_id_header = msg.get("Message-ID", "")
-            in_reply_to = msg.get("In-Reply-To", "")
-            references = msg.get("References", "")
+                body = _extract_body(msg)
+                message_id_header = msg.get("Message-ID", "")
+                in_reply_to = msg.get("In-Reply-To", "")
+                references = msg.get("References", "")
 
-            emails.append({
-                "imap_id": msg_id.decode(),
-                "message_id": message_id_header,
-                "from_email": from_addr,
-                "from_name": parseaddr(msg["From"])[0],
-                "subject": msg.get("Subject", ""),
-                "body": body,
-                "in_reply_to": in_reply_to,
-                "references": references,
-                "date": msg.get("Date", ""),
-            })
+                emails.append({
+                    "imap_id": msg_id.decode(),
+                    "message_id": message_id_header,
+                    "from_email": from_addr,
+                    "from_name": parseaddr(msg["From"])[0],
+                    "subject": msg.get("Subject", ""),
+                    "body": body,
+                    "in_reply_to": in_reply_to,
+                    "references": references,
+                    "date": msg.get("Date", ""),
+                })
 
-        return emails
-    finally:
-        conn.logout()
+            return emails
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    return _retry(_fetch)
 
 
 def mark_as_read(imap_id: str):
     """Mark a specific email as read by IMAP sequence number."""
-    conn = _imap_connect()
-    try:
-        conn.select("INBOX")
-        conn.store(imap_id.encode(), "+FLAGS", "\\Seen")
-    finally:
-        conn.logout()
+    def _mark():
+        conn = _imap_connect()
+        try:
+            conn.select("INBOX")
+            conn.store(imap_id.encode(), "+FLAGS", "\\Seen")
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    _retry(_mark)
 
 
 def mark_multiple_as_read(imap_ids: list[str]):
     """Mark multiple emails as read in a single connection."""
     if not imap_ids:
         return
-    conn = _imap_connect()
-    try:
-        conn.select("INBOX")
-        for imap_id in imap_ids:
-            conn.store(imap_id.encode(), "+FLAGS", "\\Seen")
-    finally:
-        conn.logout()
+
+    def _mark_batch():
+        conn = _imap_connect()
+        try:
+            conn.select("INBOX")
+            for imap_id in imap_ids:
+                conn.store(imap_id.encode(), "+FLAGS", "\\Seen")
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    _retry(_mark_batch)
 
 
 def send_email(to_email: str, subject: str, body: str, in_reply_to: str = None,
                references: str = None, delay_seconds: int = 0):
     """Send an email, optionally as a reply in a thread."""
+    if not to_email or not to_email.strip():
+        logger.error("send_email called with empty to_email, skipping")
+        return None
+
     if delay_seconds > 0:
         time.sleep(delay_seconds)
 
@@ -133,13 +176,18 @@ def send_email(to_email: str, subject: str, body: str, in_reply_to: str = None,
     # Plain text body
     msg.attach(MIMEText(body, "plain"))
 
-    server = _smtp_connect()
-    try:
-        server.sendmail(config.GMAIL_ADDRESS, to_email, msg.as_string())
-        logger.info(f"Email sent to {to_email}: {subject}")
-    finally:
-        server.quit()
+    def _send():
+        server = _smtp_connect()
+        try:
+            server.sendmail(config.GMAIL_ADDRESS, to_email, msg.as_string())
+            logger.info(f"Email sent to {to_email}: {subject}")
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                pass
 
+    _retry(_send)
     return msg["Message-ID"]
 
 
@@ -281,45 +329,51 @@ def send_resume_confirmation(to_email: str, in_reply_to: str = None,
 
 def fetch_old_unread_emails(max_results: int = 100) -> list[dict]:
     """Fetch unread emails older than 24 hours (for cleanup workflow)."""
-    conn = _imap_connect()
-    try:
-        conn.select("INBOX")
-        # Search for unseen emails older than 1 day
-        _, msg_nums = conn.search(None, "(UNSEEN BEFORE " +
-                                  time.strftime("%d-%b-%Y", time.gmtime(time.time() - 86400)) + ")")
-        if not msg_nums[0]:
-            return []
+    def _fetch():
+        conn = _imap_connect()
+        try:
+            conn.select("INBOX")
+            # Search for unseen emails older than 1 day
+            _, msg_nums = conn.search(None, "(UNSEEN BEFORE " +
+                                      time.strftime("%d-%b-%Y", time.gmtime(time.time() - 86400)) + ")")
+            if not msg_nums[0]:
+                return []
 
-        message_ids = msg_nums[0].split()[:max_results]
-        emails = []
+            message_ids = msg_nums[0].split()[:max_results]
+            emails = []
 
-        for msg_id in message_ids:
-            _, msg_data = conn.fetch(msg_id, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
+            for msg_id in message_ids:
+                _, msg_data = conn.fetch(msg_id, "(RFC822)")
+                raw = msg_data[0][1]
+                msg = email.message_from_bytes(raw)
 
-            from_addr = parseaddr(msg["From"])[1].lower()
-            if from_addr == config.GMAIL_ADDRESS.lower() or _is_ignored_sender(from_addr):
-                conn.store(msg_id, "+FLAGS", "\\Seen")
-                continue
+                from_addr = parseaddr(msg["From"])[1].lower()
+                if from_addr == config.GMAIL_ADDRESS.lower() or _is_ignored_sender(from_addr):
+                    conn.store(msg_id, "+FLAGS", "\\Seen")
+                    continue
 
-            body = _extract_body(msg)
+                body = _extract_body(msg)
 
-            emails.append({
-                "imap_id": msg_id.decode(),
-                "message_id": msg.get("Message-ID", ""),
-                "from_email": from_addr,
-                "from_name": parseaddr(msg["From"])[0],
-                "subject": msg.get("Subject", ""),
-                "body": body,
-                "in_reply_to": msg.get("In-Reply-To", ""),
-                "references": msg.get("References", ""),
-                "date": msg.get("Date", ""),
-            })
+                emails.append({
+                    "imap_id": msg_id.decode(),
+                    "message_id": msg.get("Message-ID", ""),
+                    "from_email": from_addr,
+                    "from_name": parseaddr(msg["From"])[0],
+                    "subject": msg.get("Subject", ""),
+                    "body": body,
+                    "in_reply_to": msg.get("In-Reply-To", ""),
+                    "references": msg.get("References", ""),
+                    "date": msg.get("Date", ""),
+                })
 
-        return emails
-    finally:
-        conn.logout()
+            return emails
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    return _retry(_fetch)
 
 
 def _extract_body(msg) -> str:

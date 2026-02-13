@@ -1,13 +1,19 @@
 name: Check In
 on:
   schedule:
-    # Run daily at 9am Eastern (14:00 UTC) — user schedules handled in code
-    - cron: "0 14 * * *"
+    # Run daily at 13:00 UTC (9am EDT / 8am EST)
+    # Code-level timezone logic determines the correct local day-of-week
+    - cron: "0 13 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: check-in
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

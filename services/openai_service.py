@@ -18,7 +18,11 @@ _instructions = None
 def get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=config.OPENAI_API_KEY)
+        _client = OpenAI(
+            api_key=config.OPENAI_API_KEY,
+            timeout=120.0,       # 120s total request timeout
+            max_retries=0,       # We handle retries ourselves via _retry_with_backoff
+        )
     return _client
 
 
@@ -65,6 +69,7 @@ def generate_response(user_context: str) -> str:
                 "vector_store_ids": [config.VECTOR_STORE_ID],
             }],
             temperature=0.7,
+            max_output_tokens=1500,  # ~3 paragraphs of coaching response
         )
         return response.output_text
 

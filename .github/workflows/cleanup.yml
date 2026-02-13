@@ -1,13 +1,18 @@
 name: Cleanup
 on:
   schedule:
-    # Daily at 11pm Eastern (04:00 UTC next day)
-    - cron: "0 4 * * *"
+    # Daily at 11pm Eastern (03:00 UTC during EDT, 04:00 UTC during EST)
+    - cron: "0 3 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

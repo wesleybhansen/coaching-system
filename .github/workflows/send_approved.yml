@@ -1,15 +1,21 @@
 name: Send Approved
 on:
   schedule:
-    # 9am, 1pm, 7pm Eastern (14:00, 18:00, 00:00 UTC)
-    - cron: "0 14 * * *"
-    - cron: "0 18 * * *"
-    - cron: "0 0 * * *"
+    # 9am, 1pm, 7pm Eastern (adjusted for EDT: 13:00, 17:00, 23:00 UTC)
+    # During EST these shift to 14:00, 18:00, 00:00 — acceptable 1hr drift
+    - cron: "0 13 * * *"
+    - cron: "0 17 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: send-approved
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

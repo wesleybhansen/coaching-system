@@ -1,13 +1,19 @@
 name: Process Emails
 on:
   schedule:
-    # Every hour from 8am-9pm Eastern (12:00-01:00 UTC next day)
+    # Every hour from 8am-9pm Eastern (13:00-01:00 UTC during EDT, 14:00-02:00 UTC during EST)
+    # Using broader window to account for DST shifts — code-level timezone logic handles exact hours
     - cron: "0 13-23,0-2 * * *"
   workflow_dispatch: # Allow manual trigger
+
+concurrency:
+  group: process-emails
+  cancel-in-progress: false  # Let running job finish; skip this trigger
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

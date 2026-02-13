@@ -95,8 +95,8 @@ def run():
                 errors.append(error_msg)
                 continue
 
-        db.complete_workflow_run(run_id, items_processed=sent)
-        logger.info(f"send_approved completed: {sent} responses sent")
+        db.complete_workflow_run(run_id, items_processed=sent, items_failed=len(errors))
+        logger.info(f"send_approved completed: {sent} sent, {len(errors)} errors")
 
         # Send alert if there were errors
         if errors:

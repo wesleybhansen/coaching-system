@@ -12,20 +12,26 @@ def run():
     """Main workflow: fetch unread emails, process each one."""
     run_id = db.start_workflow_run("process_emails")
     processed = 0
+    skipped = 0
     errors = []
 
     try:
         emails = gmail_service.fetch_unread_emails(max_results=50)
         logger.info(f"Found {len(emails)} unread emails")
 
+        # Collect imap_ids to mark as read only after successful processing
+        to_mark_read = []
+
         for email_data in emails:
             try:
                 result = coaching_service.process_email(email_data)
                 if result:
                     processed += 1
+                else:
+                    skipped += 1
 
-                # Mark as read regardless of processing outcome
-                gmail_service.mark_as_read(email_data["imap_id"])
+                # Only queue for mark-as-read AFTER processing succeeded (or intentional skip)
+                to_mark_read.append(email_data["imap_id"])
 
             except Exception as e:
                 error_msg = f"Error processing email from {email_data['from_email']}: {e}"
@@ -34,8 +40,17 @@ def run():
                 # Don't mark as read so cleanup can catch it
                 continue
 
-        db.complete_workflow_run(run_id, items_processed=processed)
-        logger.info(f"process_emails completed: {processed} emails processed")
+        # Batch mark as read — only emails that were successfully processed
+        if to_mark_read:
+            try:
+                gmail_service.mark_multiple_as_read(to_mark_read)
+            except Exception as e:
+                logger.error(f"Failed to mark {len(to_mark_read)} emails as read: {e}", exc_info=True)
+                # Not fatal — cleanup workflow will handle stragglers
+
+        db.complete_workflow_run(run_id, items_processed=processed,
+                                items_failed=len(errors), items_skipped=skipped)
+        logger.info(f"process_emails completed: {processed} processed, {skipped} skipped, {len(errors)} errors")
 
         # Send alert if there were errors
         if errors:

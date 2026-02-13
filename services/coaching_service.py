@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -10,6 +11,16 @@ from db import supabase_client as db
 from services import openai_service, gmail_service
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_dedup_key(email_data: dict) -> str:
+    """Generate a synthetic dedup key from email content when Message-ID is missing.
+
+    Creates a hash from (from_email, subject, first 500 chars of body) to prevent
+    the same email from being processed multiple times.
+    """
+    raw = f"{email_data.get('from_email', '')}|{email_data.get('subject', '')}|{email_data.get('body', '')[:500]}"
+    return f"synthetic-{hashlib.sha256(raw.encode()).hexdigest()[:24]}"
 
 # Load evaluation prompt once
 _evaluation_prompt = None
@@ -223,8 +234,14 @@ def process_email(email_data: dict) -> dict | None:
     raw_body = email_data["body"]
     message_id = email_data["message_id"]
 
+    # If Message-ID header is missing, generate a synthetic one for dedup
+    if not message_id:
+        message_id = _generate_dedup_key(email_data)
+        email_data["message_id"] = message_id
+        logger.info(f"No Message-ID header, using synthetic key: {message_id}")
+
     # Skip if we already processed this message
-    if message_id and db.conversation_exists_for_message(message_id):
+    if db.conversation_exists_for_message(message_id):
         logger.info(f"Already processed message {message_id}, skipping")
         return None
 
@@ -337,10 +354,24 @@ def process_email(email_data: dict) -> dict | None:
         return None
 
     # Check thread reply cap (max 4 follow-up replies per check-in cycle)
-    max_thread_replies = int(db.get_setting("max_thread_replies", "4"))
+    try:
+        max_thread_replies = int(db.get_setting("max_thread_replies", "4"))
+    except (ValueError, TypeError):
+        max_thread_replies = 4
     current_replies = db.count_thread_replies(user["id"])
     if current_replies >= max_thread_replies:
-        logger.info(f"Thread reply cap ({max_thread_replies}) reached for {from_email}, skipping response")
+        logger.info(f"Thread reply cap ({max_thread_replies}) reached for {from_email}, logging and skipping response")
+        # Create a record so this email isn't reprocessed, but mark as capped
+        db.create_conversation({
+            "user_id": user["id"],
+            "type": "Follow-up",
+            "user_message_raw": raw_body,
+            "user_message_parsed": parsed,
+            "status": "Sent",  # Treated as handled — no response needed
+            "ai_response": "[Thread reply cap reached — no response sent]",
+            "confidence": 10,
+            "gmail_message_id": message_id or None,
+        })
         # Still update the user's last_response_date so we know they're active
         db.update_user(user["id"], {
             "last_response_date": datetime.now(timezone.utc).isoformat(),
