@@ -151,7 +151,7 @@ class TestProcessEmailWorkflow:
 
         process_emails.run()
 
-        mock_gmail["mark_as_read"].assert_called_once_with("42")
+        mock_gmail["mark_multiple_as_read"].assert_called_once_with(["42"])
 
     def test_workflow_error_does_not_crash(self, mock_db, mock_openai, mock_gmail):
         """If one email fails to process, the workflow should continue."""
@@ -187,7 +187,7 @@ class TestProcessEmailWorkflow:
         assert any(u["email"] == "good@example.com" for u in mock_db["users"])
         # First email should NOT be marked as read (so cleanup can catch it)
         # Second email SHOULD be marked as read
-        assert mock_gmail["mark_as_read"].call_count == 1
+        mock_gmail["mark_multiple_as_read"].assert_called_once_with(["2"])
 
 
 class TestCleanupWorkflow:

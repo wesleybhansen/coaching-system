@@ -1,11 +1,15 @@
 name: Send Approved
 on:
   schedule:
-    # 9am, 1pm, 7pm Eastern (adjusted for EDT: 13:00, 17:00, 23:00 UTC)
-    # During EST these shift to 14:00, 18:00, 00:00 — acceptable 1hr drift
-    - cron: "0 13 * * *"
-    - cron: "0 17 * * *"
-    - cron: "0 23 * * *"
+    # Two send windows per day — emails land at random times within each window.
+    # The script adds a random 0-120 min delay before sending.
+    #
+    # Morning window:  9:00am ET → sends between 9am-11am ET
+    # Afternoon window: 2:30pm ET → sends between 2:30pm-4:30pm ET
+    #
+    # UTC times (EDT offset: -4h):
+    - cron: "0 13 * * *"     # 9:00am ET
+    - cron: "30 18 * * *"    # 2:30pm ET
   workflow_dispatch:
 
 concurrency:
@@ -15,7 +19,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
