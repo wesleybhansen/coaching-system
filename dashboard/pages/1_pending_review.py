@@ -19,17 +19,77 @@ if not conversations:
 
 st.info(f"{len(conversations)} response(s) awaiting review")
 
+# ── Bulk approve section ───────────────────────────────────────
+eligible = [c for c in conversations if (c.get("confidence") or 0) >= 7]
+
+if eligible:
+    st.markdown("---")
+    bulk_col1, bulk_col2, bulk_col3 = st.columns([2, 2, 2])
+
+    with bulk_col1:
+        if st.button("Select all eligible", key="select_all"):
+            for c in eligible:
+                st.session_state[f"bulk_{c['id']}"] = True
+            st.rerun()
+    with bulk_col2:
+        if st.button("Deselect all", key="deselect_all"):
+            for c in conversations:
+                st.session_state[f"bulk_{c['id']}"] = False
+            st.rerun()
+
+    selected_ids = [c["id"] for c in eligible if st.session_state.get(f"bulk_{c['id']}")]
+
+    with bulk_col3:
+        if selected_ids:
+            if st.button(f"Bulk Approve {len(selected_ids)} Selected", type="primary", key="bulk_approve"):
+                for cid in selected_ids:
+                    db.update_conversation(cid, {
+                        "status": "Approved",
+                        "approved_at": datetime.now(timezone.utc).isoformat(),
+                        "approved_by": "manual_bulk",
+                    })
+                st.success(f"Bulk approved {len(selected_ids)} conversation(s)")
+                st.rerun()
+
+    st.markdown("---")
+
+# ── Individual conversation cards ──────────────────────────────
 for conv in conversations:
     user = conv.get("users") or {}
     user_name = user.get("first_name") or user.get("email", "Unknown")
     confidence = conv.get("confidence", "?")
+    is_eligible = isinstance(confidence, (int, float)) and confidence >= 7
 
     with st.container(border=True):
-        # Header
-        col1, col2, col3 = st.columns([3, 1, 1])
-        col1.subheader(f"{user_name}")
-        col2.metric("Confidence", f"{confidence}/10")
-        col3.write(f"**Stage:** {user.get('stage', '?')}")
+        # Header with optional bulk checkbox
+        header_cols = st.columns([0.5, 3, 1, 1]) if eligible else st.columns([3, 1, 1])
+
+        if eligible:
+            with header_cols[0]:
+                if is_eligible:
+                    st.checkbox(
+                        "Select",
+                        key=f"bulk_{conv['id']}",
+                        label_visibility="collapsed",
+                    )
+            header_cols[1].subheader(f"{user_name}")
+            header_cols[2].metric("Confidence", f"{confidence}/10")
+            header_cols[3].write(f"**Stage:** {user.get('stage', '?')}")
+        else:
+            header_cols[0].subheader(f"{user_name}")
+            header_cols[1].metric("Confidence", f"{confidence}/10")
+            header_cols[2].write(f"**Stage:** {user.get('stage', '?')}")
+
+        # Confidence breakdown (sub-scores from evaluation)
+        eval_details = conv.get("evaluation_details")
+        if isinstance(eval_details, dict):
+            with st.expander("Confidence breakdown"):
+                s1, s2, s3, s4, s5 = st.columns(5)
+                s1.metric("Relevance", f"{eval_details.get('relevance', '?')}/10")
+                s2.metric("Tone", f"{eval_details.get('tone', '?')}/10")
+                s3.metric("Actionability", f"{eval_details.get('actionability', '?')}/10")
+                s4.metric("Length", f"{eval_details.get('length', '?')}/10")
+                s5.metric("Closing Q", f"{eval_details.get('closing_question', '?')}/10")
 
         if conv.get("flag_reason"):
             st.warning(f"Flag: {conv['flag_reason']}")

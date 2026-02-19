@@ -2,6 +2,7 @@
 
 import logging
 import random
+import smtplib
 import time
 from datetime import datetime, timezone
 
@@ -99,10 +100,44 @@ def run():
                 sent += 1
                 logger.info(f"Response sent to {user['email']}")
 
+            except smtplib.SMTPRecipientsRefused as e:
+                # Hard bounce — recipient address is invalid
+                error_msg = f"Bounce for conversation {conv['id']} to {user['email']}: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+
+                # Track bounce on user
+                current_bounces = (user.get("bounce_count") or 0) + 1
+                user_updates = {"bounce_count": current_bounces}
+                if current_bounces >= 3:
+                    user_updates["notes"] = f"{user.get('notes') or ''}\n[AUTO] 3+ bounces detected — email may be invalid.".strip()
+                db.update_user(user["id"], user_updates)
+
+                # Reject this conversation
+                db.update_conversation(conv["id"], {
+                    "status": "Rejected",
+                    "flag_reason": f"Email bounced ({current_bounces} total bounces)",
+                })
+                continue
+
             except Exception as e:
                 error_msg = f"Error sending response for conversation {conv['id']}: {e}"
                 logger.error(error_msg, exc_info=True)
                 errors.append(error_msg)
+
+                # Track send attempt for retry logic
+                attempts = (conv.get("send_attempts") or 0) + 1
+                if attempts >= 3:
+                    db.update_conversation(conv["id"], {
+                        "status": "Flagged",
+                        "flag_reason": f"Send failed 3 times: {e}",
+                        "send_attempts": attempts,
+                    })
+                else:
+                    db.update_conversation(conv["id"], {
+                        "status": "Send Failed",
+                        "send_attempts": attempts,
+                    })
                 continue
 
         db.complete_workflow_run(run_id, items_processed=sent, items_failed=len(errors))

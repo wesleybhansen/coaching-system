@@ -17,6 +17,7 @@ Assess based on these factors:
 - **Tone match** (direct, warm, not patronizing — matches Coach Wes's style?)
 - **Actionability** (does it give a clear next step?)
 - **Length** (1-3 paragraphs, not too long?)
+- **Closing question** (does the response end with an engaging question that moves the user forward?)
 - **Accuracy** (advice aligns with entrepreneurship best practices?)
 - **Resource usage** (if a resource is referenced, is it by name only with NO links/URLs/attachments?)
 - **Stage alignment** (does the advice match the user's current stage?)
@@ -42,6 +43,7 @@ Set flag=true if ANY of these apply:
 - User discusses topics involving minors or vulnerable populations
 - Response quality is below a 5
 - Response includes links, URLs, or attachment references (responses must NEVER contain URLs)
+- Response does not end with an engaging question
 
 ### Stage Detection
 Based on what the user describes, what stage are they in?
@@ -66,6 +68,13 @@ Respond with JSON only:
   "detected_stage": "Early Validation",
   "stage_changed": false,
   "resource_referenced": null,
-  "summary_update": "Brief update about user progress"
+  "summary_update": "Brief update about user progress",
+  "sub_scores": {{
+    "relevance": 8,
+    "tone": 9,
+    "actionability": 7,
+    "length": 8,
+    "closing_question": 9
+  }}
 }}
 ```

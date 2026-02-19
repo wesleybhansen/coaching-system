@@ -60,16 +60,32 @@ RESUME_KEYWORDS = ["resume", "i'm back", "start again", "ready"]
 
 
 def detect_intent(message: str) -> str:
-    """Detect if the message is a pause, resume, or normal message."""
+    """Detect if the message is a pause, resume, or normal message.
+
+    Short messages (<= 20 words) use keyword matching only.
+    Longer messages with keywords get AI confirmation to avoid false positives
+    (e.g. "I need to stop overthinking and just start" isn't a pause request).
+    """
     lower = message.lower().strip()
 
     is_pause = any(kw in lower for kw in PAUSE_KEYWORDS)
     is_resume = any(kw in lower for kw in RESUME_KEYWORDS)
 
     if is_resume:
-        return "resume"
-    if is_pause:
-        return "pause"
+        keyword_intent = "resume"
+    elif is_pause:
+        keyword_intent = "pause"
+    else:
+        return "normal"
+
+    # Short messages: trust keyword detection directly
+    word_count = len(message.split())
+    if word_count <= 20:
+        return keyword_intent
+
+    # Longer messages: confirm with AI to avoid false positives
+    if openai_service.confirm_intent(message, keyword_intent):
+        return keyword_intent
     return "normal"
 
 
@@ -115,7 +131,7 @@ Key challenge: They may be building features instead of selling, or spreading to
 def build_assistant_context(user: dict, parsed_message: str, message_type: str = "check-in response") -> str:
     """Build the full context string to send to the OpenAI Assistant."""
     # Recent conversations
-    recent = db.get_recent_conversations(user["id"], limit=3)
+    recent = db.get_recent_conversations(user["id"], limit=5)
     history_lines = []
     for conv in reversed(recent):
         user_msg = conv.get("user_message_parsed") or conv.get("user_message_raw") or ""
@@ -218,6 +234,7 @@ def generate_and_evaluate(user: dict, parsed_message: str, message_type: str = "
         "stage_changed": evaluation.get("stage_changed", False),
         "resource_referenced": evaluation.get("resource_referenced"),
         "summary_update": evaluation.get("summary_update"),
+        "evaluation_details": evaluation.get("sub_scores"),
         "status": status,
         "approved_by": "auto" if status == "Approved" else None,
     }
@@ -360,16 +377,18 @@ def process_email(email_data: dict) -> dict | None:
         max_thread_replies = 4
     current_replies = db.count_thread_replies(user["id"])
     if current_replies >= max_thread_replies:
-        logger.info(f"Thread reply cap ({max_thread_replies}) reached for {from_email}, logging and skipping response")
-        # Create a record so this email isn't reprocessed, but mark as capped
+        logger.info(f"Thread reply cap ({max_thread_replies}) reached for {from_email}, creating wrap-up")
+        first_name = user.get("first_name", "there")
+        wrap_up_body = f"Great conversation so far, {first_name}! I'll pick this up in your next check-in. Keep the momentum going in the meantime."
         db.create_conversation({
             "user_id": user["id"],
             "type": "Follow-up",
             "user_message_raw": raw_body,
             "user_message_parsed": parsed,
-            "status": "Sent",  # Treated as handled — no response needed
-            "ai_response": "[Thread reply cap reached — no response sent]",
-            "confidence": 10,
+            "status": "Pending Review",
+            "ai_response": wrap_up_body,
+            "confidence": 8,
+            "flag_reason": f"Thread reply cap ({max_thread_replies}) reached",
             "gmail_message_id": message_id or None,
         })
         # Still update the user's last_response_date so we know they're active
@@ -411,6 +430,7 @@ def process_email(email_data: dict) -> dict | None:
         "approved_by": result.get("approved_by"),
         "approved_at": datetime.now(timezone.utc).isoformat() if result["status"] == "Approved" else None,
         "satisfaction_score": satisfaction,
+        "evaluation_details": result.get("evaluation_details"),
     })
 
     # Update user metadata

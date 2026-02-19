@@ -74,6 +74,12 @@ def get_active_users_for_checkin_today(day_of_week: str):
     return users
 
 
+def get_onboarding_users() -> list:
+    """Get users with status 'Onboarding'."""
+    resp = get_client().table("users").select("*").eq("status", "Onboarding").execute()
+    return resp.data
+
+
 def get_silent_users(days: int = 10):
     resp = get_client().table("users").select("*").eq("status", "Active").execute()
     users = []
@@ -133,13 +139,22 @@ def get_conversations_by_status(status: str):
 
 
 def get_approved_unsent():
-    resp = (get_client().table("conversations")
-            .select("*, users(id, email, first_name, stage, summary, gmail_thread_id, gmail_message_id)")
-            .eq("status", "Approved")
-            .is_("sent_at", "null")
-            .order("created_at", desc=False)
-            .execute())
-    return resp.data
+    """Fetch conversations ready to send: Approved (unsent) + Send Failed (< 3 attempts)."""
+    # Approved, never sent
+    approved_resp = (get_client().table("conversations")
+                     .select("*, users(id, email, first_name, stage, summary, gmail_thread_id, gmail_message_id, bounce_count)")
+                     .eq("status", "Approved")
+                     .is_("sent_at", "null")
+                     .order("created_at", desc=False)
+                     .execute())
+    # Send Failed, retryable (< 3 attempts)
+    retry_resp = (get_client().table("conversations")
+                  .select("*, users(id, email, first_name, stage, summary, gmail_thread_id, gmail_message_id, bounce_count)")
+                  .eq("status", "Send Failed")
+                  .lt("send_attempts", 3)
+                  .order("created_at", desc=False)
+                  .execute())
+    return approved_resp.data + retry_resp.data
 
 
 def get_recent_conversations(user_id: str, limit: int = 3):
@@ -178,6 +193,20 @@ def get_all_conversations(limit: int = 100):
             .limit(limit)
             .execute())
     return resp.data
+
+
+def has_pending_outreach(user_id: str) -> bool:
+    """Check if a user has any conversations in Pending Review or Approved (unsent)."""
+    for status in ("Pending Review", "Approved"):
+        resp = (get_client().table("conversations")
+                .select("id")
+                .eq("user_id", user_id)
+                .eq("status", status)
+                .limit(1)
+                .execute())
+        if resp.data:
+            return True
+    return False
 
 
 def has_recent_reengagement(user_id: str, within_days: int = 14) -> bool:

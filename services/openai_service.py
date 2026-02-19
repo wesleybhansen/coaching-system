@@ -114,7 +114,39 @@ def evaluate_response(user_message: str, ai_response: str, user_stage: str,
             "stage_changed": False,
             "resource_referenced": None,
             "summary_update": None,
+            "sub_scores": None,
         }
+
+
+def confirm_intent(message: str, detected_intent: str) -> bool:
+    """Use GPT-4o-mini to confirm whether a message truly intends to pause or resume.
+
+    Called when keyword detection fires on a longer message (>20 words) where
+    the keyword may be incidental. Returns True if the intent is confirmed.
+    """
+    client = get_client()
+
+    prompt = f"""A coaching program member sent this email:
+
+"{message}"
+
+A keyword detector flagged this as a "{detected_intent}" request. Does the person actually intend to {detected_intent} their coaching? Answer ONLY "yes" or "no"."""
+
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=5,
+        )
+        return response.choices[0].message.content.strip().lower()
+
+    try:
+        answer = _retry_with_backoff(_call)
+        return answer.startswith("yes")
+    except Exception as e:
+        logger.warning(f"confirm_intent failed, falling back to keyword result: {e}")
+        return True  # Fall back to keyword result on failure
 
 
 def generate_summary_update(current_summary: str, user_message: str,

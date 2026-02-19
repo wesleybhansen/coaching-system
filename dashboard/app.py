@@ -69,6 +69,34 @@ try:
     col3.metric("Active Users", len(active_users))
     col4.metric("Total Users", len(users))
 
+    # Error banner: failed workflows and send failures
+    try:
+        send_failed = db.get_conversations_by_status("Send Failed")
+        recent_runs = db.get_recent_workflow_runs(hours=24, limit=50)
+        failed_runs = [r for r in recent_runs if r.get("status") in ("failed", "completed_with_errors")]
+
+        alerts = []
+        if send_failed:
+            alerts.append(f"{len(send_failed)} conversation(s) failed to send")
+        if failed_runs:
+            alerts.append(f"{len(failed_runs)} workflow(s) had errors in the last 24h")
+
+        if alerts:
+            st.error("**Attention needed:** " + " | ".join(alerts))
+            with st.expander("Error details"):
+                if send_failed:
+                    st.markdown("**Send failures:**")
+                    for sf in send_failed[:10]:
+                        attempts = sf.get("send_attempts", 0)
+                        st.write(f"- Conversation {sf['id'][:8]}... ({attempts} attempt(s))")
+                if failed_runs:
+                    st.markdown("**Failed workflows:**")
+                    for fr in failed_runs[:10]:
+                        started = (fr.get("started_at") or "")[:19].replace("T", " ")
+                        st.write(f"- {fr['workflow_name']} at {started}: {fr.get('error_message', 'Unknown error')}")
+    except Exception:
+        pass  # Don't let the error banner crash the dashboard
+
     # Recent workflow runs
     st.subheader("Recent Workflow Runs")
     runs = db.get_recent_workflow_runs(hours=24, limit=10)

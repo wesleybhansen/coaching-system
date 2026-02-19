@@ -135,8 +135,8 @@ class TestSendApproved:
         call_kwargs = mock_gmail["send_email"].call_args
         assert call_kwargs[1]["in_reply_to"] == "<thread-msg@gmail.com>"
 
-    def test_smtp_failure_does_not_mark_as_sent(self, mock_db, mock_openai, mock_gmail):
-        """If send_email raises an exception, conversation should NOT be marked as Sent."""
+    def test_smtp_failure_marks_as_send_failed(self, mock_db, mock_openai, mock_gmail):
+        """If send_email raises an exception, conversation should be marked as Send Failed."""
         user = make_user(email="alice@example.com")
         mock_db["users"].append(user)
 
@@ -152,9 +152,10 @@ class TestSendApproved:
 
         send_approved.run()
 
-        # Conversation should still be Approved (not Sent)
-        assert conv["status"] == "Approved"
+        # Conversation should be marked as Send Failed (not Sent, not Approved)
+        assert conv["status"] == "Send Failed"
         assert conv["sent_at"] is None
+        assert conv["send_attempts"] == 1
 
     def test_skips_conversation_without_user(self, mock_db, mock_openai, mock_gmail):
         """If a conversation has no linked user, it should be skipped."""

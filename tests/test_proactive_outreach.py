@@ -168,11 +168,12 @@ class TestReEngagement:
         )
         mock_db["users"].append(user)
 
-        # Last re-engagement was 15 days ago
+        # Last re-engagement was 15 days ago and already sent (not pending)
         mock_db["conversations"].append(
             make_conversation(
                 user_id=user["id"],
                 type="Re-engagement",
+                status="Sent",
                 created_at=(datetime.now(timezone.utc) - timedelta(days=15)).isoformat(),
             )
         )

@@ -45,6 +45,7 @@ def make_user(**overrides):
         "satisfaction_score": None,
         "current_challenge": None,
         "notes": None,
+        "bounce_count": 0,
     }
     defaults.update(overrides)
     return defaults
@@ -91,6 +92,8 @@ def make_conversation(**overrides):
         "stage_changed": False,
         "approved_by": None,
         "approved_at": None,
+        "evaluation_details": None,
+        "send_attempts": 0,
     }
     defaults.update(overrides)
     return defaults
@@ -216,8 +219,14 @@ def mock_db(monkeypatch):
     def get_approved_unsent():
         results = []
         for c in storage["conversations"]:
+            # Approved and unsent
             if c.get("status") == "Approved" and c.get("sent_at") is None:
-                # Attach user data like the real query does
+                user = get_user_by_id(c.get("user_id"))
+                c_copy = dict(c)
+                c_copy["users"] = user
+                results.append(c_copy)
+            # Send Failed with < 3 attempts (retryable)
+            elif c.get("status") == "Send Failed" and (c.get("send_attempts") or 0) < 3:
                 user = get_user_by_id(c.get("user_id"))
                 c_copy = dict(c)
                 c_copy["users"] = user
@@ -311,6 +320,15 @@ def mock_db(monkeypatch):
                 users.append(u)
         return users
 
+    def has_pending_outreach(user_id):
+        return any(
+            c.get("user_id") == user_id and c.get("status") in ("Pending Review", "Approved")
+            for c in storage["conversations"]
+        )
+
+    def get_onboarding_users():
+        return [u for u in storage["users"] if u.get("status") == "Onboarding"]
+
     def has_recent_reengagement(user_id, within_days=14):
         for c in reversed(storage["conversations"]):
             if c.get("user_id") == user_id and c.get("type") == "Re-engagement":
@@ -364,6 +382,8 @@ def mock_db(monkeypatch):
     monkeypatch.setattr(db_mod, "get_active_users_needing_checkin", get_active_users_needing_checkin)
     monkeypatch.setattr(db_mod, "get_active_users_for_checkin_today", get_active_users_for_checkin_today)
     monkeypatch.setattr(db_mod, "get_silent_users", get_silent_users)
+    monkeypatch.setattr(db_mod, "has_pending_outreach", has_pending_outreach)
+    monkeypatch.setattr(db_mod, "get_onboarding_users", get_onboarding_users)
     monkeypatch.setattr(db_mod, "has_recent_reengagement", has_recent_reengagement)
     monkeypatch.setattr(db_mod, "count_thread_replies", count_thread_replies)
     monkeypatch.setattr(db_mod, "get_resource_list_for_prompt", get_resource_list_for_prompt)
@@ -394,11 +414,19 @@ def mock_openai(monkeypatch):
             "stage_changed": False,
             "resource_referenced": None,
             "summary_update": "User making progress on ideation.",
+            "sub_scores": {
+                "relevance": 7,
+                "tone": 8,
+                "actionability": 7,
+                "length": 7,
+                "closing_question": 7,
+            },
         }),
         "generate_summary_update": MagicMock(return_value="User continued working on their business plan."),
         "parse_email_fallback": MagicMock(return_value="Parsed email content."),
         "generate_checkin_question": MagicMock(return_value="Hey! How's the customer discovery going? Made any progress this week?"),
         "analyze_satisfaction": MagicMock(return_value=7.0),
+        "confirm_intent": MagicMock(return_value=True),
     }
 
     for name, mock in mocks.items():

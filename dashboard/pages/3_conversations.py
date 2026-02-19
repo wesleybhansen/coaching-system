@@ -68,13 +68,18 @@ for conv in conversations:
             st.markdown("**User message:**")
             st.text(conv.get("user_message_parsed") or conv.get("user_message_raw", ""))
 
-        if conv.get("ai_response"):
+        if conv.get("sent_response") and conv["sent_response"].strip() != (conv.get("ai_response") or "").strip():
+            # Show side-by-side diff when response was edited
+            diff_col1, diff_col2 = st.columns(2)
+            with diff_col1:
+                st.markdown("**AI Original:**")
+                st.text(conv.get("ai_response") or "(empty)")
+            with diff_col2:
+                st.markdown("**Sent (Edited):**")
+                st.text(conv["sent_response"])
+        elif conv.get("ai_response"):
             st.markdown("**AI response:**")
             st.text(conv["ai_response"])
-
-        if conv.get("sent_response") and conv["sent_response"] != conv.get("ai_response"):
-            st.markdown("**Sent response (edited):**")
-            st.text(conv["sent_response"])
 
         if conv.get("sent_at"):
             st.write(f"**Sent at:** {conv['sent_at'][:19].replace('T', ' ')}")

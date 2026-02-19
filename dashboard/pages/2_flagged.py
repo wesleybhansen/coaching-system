@@ -29,6 +29,17 @@ for conv in conversations:
         col1.subheader(f"{user_name}")
         col2.metric("Confidence", f"{confidence}/10")
 
+        # Confidence breakdown (sub-scores from evaluation)
+        eval_details = conv.get("evaluation_details")
+        if isinstance(eval_details, dict):
+            with st.expander("Confidence breakdown"):
+                s1, s2, s3, s4, s5 = st.columns(5)
+                s1.metric("Relevance", f"{eval_details.get('relevance', '?')}/10")
+                s2.metric("Tone", f"{eval_details.get('tone', '?')}/10")
+                s3.metric("Actionability", f"{eval_details.get('actionability', '?')}/10")
+                s4.metric("Length", f"{eval_details.get('length', '?')}/10")
+                s5.metric("Closing Q", f"{eval_details.get('closing_question', '?')}/10")
+
         # Flag reason prominently displayed
         st.error(f"**Flag Reason:** {conv.get('flag_reason', 'Not specified')}")
 
@@ -44,6 +55,10 @@ for conv in conversations:
         )
 
         # AI response (editable) — may be empty for cleanup-caught items
+        if not conv.get("ai_response"):
+            reason = conv.get("flag_reason") or "Unknown reason"
+            st.info(f"No AI response was generated. Reason: {reason}. Write a response below before approving.")
+
         st.markdown("**AI Response (editable):**")
         ai_resp = conv.get("ai_response") or ""
         edited_response = st.text_area(
