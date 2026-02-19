@@ -155,6 +155,7 @@ def mock_db(monkeypatch):
             "default_checkin_days": "tue,fri",
             "max_checkin_days_per_week": "3",
             "notification_email": "coachwes@thelaunchpadincubator.com",
+            "send_window_minutes": "120",
         },
         "model_responses": [],
         "corrections": [],
@@ -243,11 +244,13 @@ def mock_db(monkeypatch):
         storage["workflow_runs"].append({"id": run_id, "workflow_name": name, "status": "running"})
         return run_id
 
-    def complete_workflow_run(run_id, items_processed=0):
+    def complete_workflow_run(run_id, items_processed=0, items_failed=0, items_skipped=0):
         for r in storage["workflow_runs"]:
             if r["id"] == run_id:
-                r["status"] = "completed"
+                r["status"] = "completed_with_errors" if items_failed > 0 else "completed"
                 r["items_processed"] = items_processed
+                r["items_failed"] = items_failed
+                r["items_skipped"] = items_skipped
 
     def fail_workflow_run(run_id, error_message):
         for r in storage["workflow_runs"]:

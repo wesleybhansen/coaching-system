@@ -12,7 +12,17 @@ logger = logging.getLogger(__name__)
 
 
 def run():
-    """Send all approved, unsent responses."""
+    """Send all approved, unsent responses.
+
+    Adds a random delay at startup (0-120 min) so emails land at varied times
+    within the send window rather than exactly when the cron fires.
+    """
+    # Random startup delay so sends feel human (not all at the same time)
+    window_minutes = int(db.get_setting("send_window_minutes", "120"))
+    startup_delay = random.randint(0, window_minutes * 60)
+    logger.info(f"Startup delay: {startup_delay}s ({startup_delay // 60}m)")
+    time.sleep(startup_delay)
+
     run_id = db.start_workflow_run("send_approved")
     sent = 0
     errors = []

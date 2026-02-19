@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from db import supabase_client as db
-from services import gmail_service, openai_service
+from services import openai_service
 
 logger = logging.getLogger(__name__)
 
@@ -43,45 +43,19 @@ def run():
                 # Generate personalized check-in question based on user context
                 checkin_body = _generate_checkin_body(user, first_name)
 
-                # Send as reply if thread exists, otherwise new email
-                in_reply_to = user.get("gmail_message_id")
-                references = user.get("gmail_message_id")
-
-                subject = "Re: Coaching" if in_reply_to else "Quick check-in"
-
-                sent_msg_id = gmail_service.send_email(
-                    to_email=email_addr,
-                    subject=subject,
-                    body=checkin_body,
-                    in_reply_to=in_reply_to,
-                    references=references,
-                )
-
-                # Log the check-in conversation
+                # Route through Pending Review instead of sending directly
                 db.create_conversation({
                     "user_id": user["id"],
                     "type": "Check-in",
-                    "status": "Sent",
+                    "status": "Pending Review",
                     "ai_response": checkin_body,
-                    "sent_response": checkin_body,
-                    "sent_at": datetime.now(timezone.utc).isoformat(),
-                    "gmail_message_id": sent_msg_id,
                 })
 
-                # Update user's gmail tracking
-                updates = {
-                    "gmail_message_id": sent_msg_id,
-                    "last_response_date": datetime.now(timezone.utc).isoformat(),
-                }
-                if not in_reply_to:
-                    updates["gmail_thread_id"] = sent_msg_id
-                db.update_user(user["id"], updates)
-
                 sent += 1
-                logger.info(f"Check-in sent to {email_addr}")
+                logger.info(f"Check-in queued for review: {email_addr}")
 
             except Exception as e:
-                logger.error(f"Error sending check-in to {user['email']}: {e}", exc_info=True)
+                logger.error(f"Error creating check-in for {user['email']}: {e}", exc_info=True)
                 continue
 
         db.complete_workflow_run(run_id, items_processed=sent)
@@ -119,9 +93,7 @@ Current Challenge: {challenge}
 Journey Summary: {summary[-500:] if len(summary) > 500 else summary}
 Recent Exchanges: {recent_text if recent_text else 'None yet'}"""
 
-        checkin_msg = openai_service.generate_checkin_question(context)
-        # Add sign-off
-        return f"{checkin_msg}\n\nWes"
+        return openai_service.generate_checkin_question(context)
 
     except Exception as e:
         logger.warning(f"Failed to generate personalized check-in for {first_name}: {e}. Using standard template.")
@@ -139,6 +111,4 @@ Quick check-in. Reply with:
 3. Next Step - What's the single most important thing you need to do next?
 4. Approach - How are you going about it?
 
-Keep it brief - a sentence or two for each.
-
-Wes"""
+Keep it brief - a sentence or two for each."""

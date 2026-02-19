@@ -1,6 +1,7 @@
 """Tests for check-in and re-engagement workflows.
 
 Covers: check-in timing, re-engagement nudge/silence, duplicate prevention.
+Both workflows now route through Pending Review instead of sending directly.
 """
 
 from datetime import datetime, timezone, timedelta
@@ -17,32 +18,48 @@ def _get_today_day():
 
 
 class TestCheckIn:
-    """Test the check_in workflow sends to the right users.
+    """Test the check_in workflow queues check-ins for review.
 
-    The rewritten check-in uses get_active_users_for_checkin_today(today) and
-    sends via gmail_service.send_email (not send_checkin).
+    Check-ins are routed through Pending Review so the coach can
+    approve/edit before they are sent.
     """
 
-    def test_sends_to_active_user_not_contacted_recently(self, mock_db, mock_openai, mock_gmail):
+    def test_queues_checkin_for_active_user(self, mock_db, mock_openai, mock_gmail):
         today = _get_today_day()
         user = make_user(
             email="alice@example.com",
             status="Active",
-            checkin_days=today,  # schedule for today
+            checkin_days=today,
             last_response_date=(datetime.now(timezone.utc) - timedelta(days=4)).isoformat(),
         )
         mock_db["users"].append(user)
 
         check_in.run()
 
-        mock_gmail["send_email"].assert_called_once()
-        call_kwargs = mock_gmail["send_email"].call_args
-        assert call_kwargs[1]["to_email"] == "alice@example.com"
+        assert len(mock_db["conversations"]) == 1
+        conv = mock_db["conversations"][0]
+        assert conv["type"] == "Check-in"
+        assert conv["status"] == "Pending Review"
+        assert conv["ai_response"]  # has generated content
+
+    def test_does_not_send_email_directly(self, mock_db, mock_openai, mock_gmail):
+        """Check-ins should never call send_email directly."""
+        today = _get_today_day()
+        user = make_user(
+            email="alice@example.com",
+            status="Active",
+            checkin_days=today,
+            last_response_date=(datetime.now(timezone.utc) - timedelta(days=4)).isoformat(),
+        )
+        mock_db["users"].append(user)
+
+        check_in.run()
+
+        mock_gmail["send_email"].assert_not_called()
 
     def test_skips_user_not_scheduled_today(self, mock_db, mock_openai, mock_gmail):
         """User whose check-in days don't include today should be skipped."""
         today = _get_today_day()
-        # Pick a different day than today
         all_days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
         other_day = [d for d in all_days if d != today][0]
 
@@ -56,7 +73,7 @@ class TestCheckIn:
 
         check_in.run()
 
-        mock_gmail["send_email"].assert_not_called()
+        assert len(mock_db["conversations"]) == 0
 
     def test_skips_paused_user(self, mock_db, mock_openai, mock_gmail):
         today = _get_today_day()
@@ -70,9 +87,9 @@ class TestCheckIn:
 
         check_in.run()
 
-        mock_gmail["send_email"].assert_not_called()
+        assert len(mock_db["conversations"]) == 0
 
-    def test_sends_to_user_never_contacted(self, mock_db, mock_openai, mock_gmail):
+    def test_queues_checkin_for_user_never_contacted(self, mock_db, mock_openai, mock_gmail):
         today = _get_today_day()
         user = make_user(
             email="new@example.com",
@@ -84,30 +101,14 @@ class TestCheckIn:
 
         check_in.run()
 
-        mock_gmail["send_email"].assert_called_once()
-
-    def test_creates_sent_conversation_record(self, mock_db, mock_openai, mock_gmail):
-        today = _get_today_day()
-        user = make_user(
-            email="alice@example.com",
-            status="Active",
-            checkin_days=today,
-            last_response_date=(datetime.now(timezone.utc) - timedelta(days=5)).isoformat(),
-        )
-        mock_db["users"].append(user)
-
-        check_in.run()
-
         assert len(mock_db["conversations"]) == 1
-        conv = mock_db["conversations"][0]
-        assert conv["type"] == "Check-in"
-        assert conv["status"] == "Sent"
+        assert mock_db["conversations"][0]["status"] == "Pending Review"
 
 
 class TestReEngagement:
-    """Test the re_engagement workflow."""
+    """Test the re_engagement workflow queues nudges for review."""
 
-    def test_sends_nudge_to_user_silent_10_plus_days(self, mock_db, mock_openai, mock_gmail):
+    def test_queues_nudge_for_silent_user(self, mock_db, mock_openai, mock_gmail):
         user = make_user(
             email="silent@example.com",
             status="Active",
@@ -117,7 +118,24 @@ class TestReEngagement:
 
         re_engagement.run()
 
-        mock_gmail["send_reengagement"].assert_called_once()
+        re_eng_convs = [c for c in mock_db["conversations"] if c["type"] == "Re-engagement"]
+        assert len(re_eng_convs) == 1
+        assert re_eng_convs[0]["status"] == "Pending Review"
+        assert re_eng_convs[0]["ai_response"]  # has body text
+
+    def test_does_not_send_email_directly(self, mock_db, mock_openai, mock_gmail):
+        """Re-engagement should never call send_reengagement directly."""
+        user = make_user(
+            email="silent@example.com",
+            status="Active",
+            last_response_date=(datetime.now(timezone.utc) - timedelta(days=12)).isoformat(),
+        )
+        mock_db["users"].append(user)
+
+        re_engagement.run()
+
+        mock_gmail["send_reengagement"].assert_not_called()
+        mock_gmail["send_email"].assert_not_called()
 
     def test_skips_if_recent_reengagement_sent(self, mock_db, mock_openai, mock_gmail):
         user = make_user(
@@ -138,7 +156,9 @@ class TestReEngagement:
 
         re_engagement.run()
 
-        mock_gmail["send_reengagement"].assert_not_called()
+        # Should still be just the 1 pre-existing re-engagement (no new one created)
+        re_eng_convs = [c for c in mock_db["conversations"] if c["type"] == "Re-engagement"]
+        assert len(re_eng_convs) == 1
 
     def test_allows_reengagement_after_14_days(self, mock_db, mock_openai, mock_gmail):
         user = make_user(
@@ -159,7 +179,11 @@ class TestReEngagement:
 
         re_engagement.run()
 
-        mock_gmail["send_reengagement"].assert_called_once()
+        # Should now have 2 re-engagements: the old one + the new Pending Review one
+        re_eng_convs = [c for c in mock_db["conversations"] if c["type"] == "Re-engagement"]
+        assert len(re_eng_convs) == 2
+        new_conv = re_eng_convs[-1]
+        assert new_conv["status"] == "Pending Review"
 
     def test_marks_very_silent_user_as_silent(self, mock_db, mock_openai, mock_gmail):
         """Users silent for 17+ days (10 + 7) should be marked as Silent."""
@@ -174,7 +198,7 @@ class TestReEngagement:
 
         assert user["status"] == "Silent"
 
-    def test_does_not_send_to_non_active_users(self, mock_db, mock_openai, mock_gmail):
+    def test_does_not_queue_for_non_active_users(self, mock_db, mock_openai, mock_gmail):
         user = make_user(
             email="paused@example.com",
             status="Paused",
@@ -184,18 +208,5 @@ class TestReEngagement:
 
         re_engagement.run()
 
-        mock_gmail["send_reengagement"].assert_not_called()
-
-    def test_creates_reengagement_conversation_record(self, mock_db, mock_openai, mock_gmail):
-        user = make_user(
-            email="silent@example.com",
-            status="Active",
-            last_response_date=(datetime.now(timezone.utc) - timedelta(days=12)).isoformat(),
-        )
-        mock_db["users"].append(user)
-
-        re_engagement.run()
-
         re_eng_convs = [c for c in mock_db["conversations"] if c["type"] == "Re-engagement"]
-        assert len(re_eng_convs) == 1
-        assert re_eng_convs[0]["status"] == "Sent"
+        assert len(re_eng_convs) == 0

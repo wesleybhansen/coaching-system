@@ -1,10 +1,8 @@
 """Send re-engagement nudges to silent users and mark very silent users."""
 
 import logging
-from datetime import datetime, timezone
 
 from db import supabase_client as db
-from services import gmail_service
 
 logger = logging.getLogger(__name__)
 
@@ -33,27 +31,23 @@ def run():
                     continue
 
                 first_name = user.get("first_name") or "there"
-                in_reply_to = user.get("gmail_message_id")
-                references = user.get("gmail_message_id")
 
-                sent_msg_id = gmail_service.send_reengagement(
-                    to_email=user["email"],
-                    first_name=first_name,
-                    in_reply_to=in_reply_to,
-                    references=references,
-                )
+                body = f"""Hey {first_name},
 
-                # Log the re-engagement
+Haven't heard from you in a bit. Everything okay?
+
+When you're ready, just reply with a quick update on what you're working on."""
+
+                # Route through Pending Review instead of sending directly
                 db.create_conversation({
                     "user_id": user["id"],
                     "type": "Re-engagement",
-                    "status": "Sent",
-                    "sent_at": datetime.now(timezone.utc).isoformat(),
-                    "gmail_message_id": sent_msg_id,
+                    "status": "Pending Review",
+                    "ai_response": body,
                 })
 
                 processed += 1
-                logger.info(f"Re-engagement sent to {user['email']}")
+                logger.info(f"Re-engagement queued for review: {user['email']}")
 
             except Exception as e:
                 logger.error(f"Error sending re-engagement to {user['email']}: {e}", exc_info=True)
