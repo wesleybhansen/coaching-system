@@ -208,3 +208,68 @@ class TestSendApproved:
         assert "Initial summary." in user["summary"]
         # The mock returns "User continued working on their business plan."
         assert "business plan" in user["summary"]
+
+
+class TestSendOffsets:
+    """Test per-email random offset logic."""
+
+    def test_multiple_emails_all_sent(self, mock_db, mock_openai, mock_gmail):
+        """All approved emails should be sent regardless of offset assignment."""
+        user1 = make_user(email="alice@example.com")
+        user2 = make_user(email="bob@example.com")
+        user3 = make_user(email="carol@example.com")
+        mock_db["users"].extend([user1, user2, user3])
+
+        for user in [user1, user2, user3]:
+            conv = make_conversation(
+                user_id=user["id"],
+                status="Approved",
+                ai_response="Keep going!",
+                sent_at=None,
+            )
+            mock_db["conversations"].append(conv)
+
+        send_approved.run()
+
+        assert mock_gmail["send_email"].call_count == 3
+
+    def test_send_delay_max_minutes_setting_respected(self, mock_db, mock_openai, mock_gmail):
+        """The send_delay_max_minutes setting should control offset range."""
+        mock_db["settings"]["send_delay_max_minutes"] = "50"
+
+        user = make_user(email="alice@example.com")
+        mock_db["users"].append(user)
+
+        conv = make_conversation(
+            user_id=user["id"],
+            status="Approved",
+            ai_response="Keep going!",
+            sent_at=None,
+        )
+        mock_db["conversations"].append(conv)
+
+        send_approved.run()
+
+        # Email should still be sent
+        mock_gmail["send_email"].assert_called_once()
+        # Conversation should be marked as Sent
+        assert conv["status"] == "Sent"
+
+    def test_no_startup_delay(self, mock_db, mock_openai, mock_gmail):
+        """The old startup delay logic should not exist — offset is per-email."""
+        user = make_user(email="alice@example.com")
+        mock_db["users"].append(user)
+
+        conv = make_conversation(
+            user_id=user["id"],
+            status="Approved",
+            ai_response="Keep going!",
+            sent_at=None,
+        )
+        mock_db["conversations"].append(conv)
+
+        # If old send_window_minutes setting is present, it should be ignored
+        mock_db["settings"]["send_window_minutes"] = "120"
+
+        send_approved.run()
+        mock_gmail["send_email"].assert_called_once()

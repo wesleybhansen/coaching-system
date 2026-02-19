@@ -44,5 +44,8 @@ except ValueError:
     print(f"ERROR: GMAIL_SMTP_PORT must be a number, got '{os.environ.get('GMAIL_SMTP_PORT')}'", file=sys.stderr)
     sys.exit(1)
 
+# Anthropic (optional — only needed when Anthropic is selected as AI provider)
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
 # Timezone
 COACH_TIMEZONE = os.environ.get("COACH_TIMEZONE", "America/New_York")

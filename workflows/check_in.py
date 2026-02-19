@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from db import supabase_client as db
-from services import openai_service
+from services import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ Current Challenge: {challenge}
 Journey Summary: {summary[-500:] if len(summary) > 500 else summary}
 Recent Exchanges: {recent_text if recent_text else 'None yet'}"""
 
-        return openai_service.generate_checkin_question(context)
+        return ai_service.generate_checkin_question(context)
 
     except Exception as e:
         logger.warning(f"Failed to generate personalized check-in for {first_name}: {e}. Using standard template.")

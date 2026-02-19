@@ -1,11 +1,11 @@
 name: Send Approved
 on:
   schedule:
-    # Two send windows per day — emails land at random times within each window.
-    # The script adds a random 0-120 min delay before sending.
+    # Two send windows per day — each email gets a random offset of 1-100 min
+    # so responses land at varied, human-feeling times.
     #
-    # Morning window:  9:00am ET → sends between 9am-11am ET
-    # Afternoon window: 2:30pm ET → sends between 2:30pm-4:30pm ET
+    # Morning window:  9:00am ET → emails sent between ~9:01am-10:40am ET
+    # Afternoon window: 2:30pm ET → emails sent between ~2:31pm-4:10pm ET
     #
     # UTC times (EDT offset: -4h):
     - cron: "0 13 * * *"     # 9:00am ET
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,6 +32,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           VECTOR_STORE_ID: ${{ secrets.VECTOR_STORE_ID }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

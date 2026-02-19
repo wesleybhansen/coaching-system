@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from email_reply_parser import EmailReplyParser
 
 from db import supabase_client as db
-from services import openai_service, gmail_service
+from services import openai_service, gmail_service, ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ def generate_and_evaluate(user: dict, parsed_message: str, message_type: str = "
     """
     # Build context and generate response
     context = build_assistant_context(user, parsed_message, message_type)
-    ai_response = openai_service.generate_response(context)
+    ai_response = ai_service.generate_response(context)
 
     # Evaluate the response
     evaluation = openai_service.evaluate_response(

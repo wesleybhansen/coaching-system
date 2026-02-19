@@ -55,13 +55,13 @@ def _retry_with_backoff(func, *args, **kwargs):
     raise last_error
 
 
-def generate_response(user_context: str) -> str:
+def generate_response(user_context: str, model: str = "gpt-4o") -> str:
     """Generate a coaching response using the Responses API with file_search."""
     client = get_client()
 
     def _call():
         response = client.responses.create(
-            model="gpt-4o",
+            model=model,
             instructions=_get_instructions(),
             input=user_context,
             tools=[{
@@ -209,7 +209,7 @@ Email:
     return _retry_with_backoff(_call)
 
 
-def generate_checkin_question(user_context: str) -> str:
+def generate_checkin_question(user_context: str, model: str = "gpt-4o") -> str:
     """Generate a personalized check-in question based on user context."""
     client = get_client()
 
@@ -222,7 +222,7 @@ Do NOT include a sign-off like "Wes" - that will be added automatically.
 
     def _call():
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=300,

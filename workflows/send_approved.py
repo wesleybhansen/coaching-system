@@ -15,15 +15,10 @@ logger = logging.getLogger(__name__)
 def run():
     """Send all approved, unsent responses.
 
-    Adds a random delay at startup (0-120 min) so emails land at varied times
-    within the send window rather than exactly when the cron fires.
+    Each email gets a random offset of 1-N minutes (default N=100) so
+    responses land at varied, human-feeling times rather than in a cluster.
+    Emails are sorted by offset and sent with incremental gaps between them.
     """
-    # Random startup delay so sends feel human (not all at the same time)
-    window_minutes = int(db.get_setting("send_window_minutes", "120"))
-    startup_delay = random.randint(0, window_minutes * 60)
-    logger.info(f"Startup delay: {startup_delay}s ({startup_delay // 60}m)")
-    time.sleep(startup_delay)
-
     run_id = db.start_workflow_run("send_approved")
     sent = 0
     errors = []
@@ -32,6 +27,19 @@ def run():
         conversations = db.get_approved_unsent()
         logger.info(f"Found {len(conversations)} approved responses to send")
 
+        if not conversations:
+            db.complete_workflow_run(run_id, items_processed=0, items_failed=0)
+            return
+
+        # Assign each email a random offset and sort by it
+        max_offset = max(1, int(db.get_setting("send_delay_max_minutes", "100")))
+        for conv in conversations:
+            conv["_send_offset"] = random.randint(1, max_offset)
+        conversations.sort(key=lambda c: c["_send_offset"])
+
+        logger.info(f"Send offsets: {[c['_send_offset'] for c in conversations]} minutes")
+
+        prev_offset = 0
         for conv in conversations:
             try:
                 user = conv.get("users")
@@ -48,10 +56,12 @@ def run():
                 # Add sign-off
                 full_response = f"{response_text}\n\nWes"
 
-                # Random delay (0-60 seconds) to feel human
-                delay = random.randint(0, 60)
-                logger.info(f"Sending to {user['email']} with {delay}s delay")
-                time.sleep(delay)
+                # Sleep the incremental gap from previous email's offset
+                gap_minutes = conv["_send_offset"] - prev_offset
+                gap_seconds = gap_minutes * 60
+                logger.info(f"Sending to {user['email']} (offset {conv['_send_offset']}m, sleeping {gap_seconds}s)")
+                time.sleep(gap_seconds)
+                prev_offset = conv["_send_offset"]
 
                 # Threading with resilience: try user's gmail_message_id first,
                 # fall back to finding the most recent conversation's message_id

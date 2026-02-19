@@ -18,6 +18,7 @@ os.environ.setdefault("SUPABASE_KEY", "fake-key")
 os.environ.setdefault("OPENAI_API_KEY", "fake-key")
 os.environ.setdefault("GMAIL_ADDRESS", "coach@test.com")
 os.environ.setdefault("GMAIL_APP_PASSWORD", "fake-password")
+os.environ.setdefault("ANTHROPIC_API_KEY", "fake-anthropic-key")
 
 # Ensure project root is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -158,7 +159,9 @@ def mock_db(monkeypatch):
             "default_checkin_days": "tue,fri",
             "max_checkin_days_per_week": "3",
             "notification_email": "coachwes@thelaunchpadincubator.com",
-            "send_window_minutes": "120",
+            "send_delay_max_minutes": "100",
+            "ai_provider": "openai",
+            "ai_model": "gpt-4o",
         },
         "model_responses": [],
         "corrections": [],
@@ -468,5 +471,37 @@ def no_sleep(monkeypatch):
     import time
     import workflows.send_approved as sa
     monkeypatch.setattr(time, "sleep", lambda x: None)
-    monkeypatch.setattr(sa.random, "randint", lambda a, b: 0)
+    monkeypatch.setattr(sa.random, "randint", lambda a, b: a)
     monkeypatch.setattr(sa.time, "sleep", lambda x: None)
+
+
+@pytest.fixture
+def mock_anthropic(monkeypatch):
+    """Patches Anthropic service functions with controllable fakes."""
+    import services.anthropic_service as anth
+
+    mocks = {
+        "generate_response": MagicMock(return_value="Great progress! Keep focusing on customer discovery."),
+        "generate_checkin_question": MagicMock(return_value="Hey! How's the customer discovery going? Made any progress this week?"),
+    }
+
+    for name, mock in mocks.items():
+        monkeypatch.setattr(anth, name, mock)
+
+    return mocks
+
+
+@pytest.fixture
+def mock_ai_service(monkeypatch):
+    """Patches ai_service functions with controllable fakes."""
+    import services.ai_service as ai_svc
+
+    mocks = {
+        "generate_response": MagicMock(return_value="Great progress! Keep focusing on customer discovery."),
+        "generate_checkin_question": MagicMock(return_value="Hey! How's the customer discovery going? Made any progress this week?"),
+    }
+
+    for name, mock in mocks.items():
+        monkeypatch.setattr(ai_svc, name, mock)
+
+    return mocks

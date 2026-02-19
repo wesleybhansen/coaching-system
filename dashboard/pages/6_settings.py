@@ -30,6 +30,46 @@ if new_threshold != current_threshold:
     db.set_setting("global_auto_approve_threshold", str(new_threshold))
     st.success(f"Threshold updated to {new_threshold}")
 
+# ── AI Model ─────────────────────────────────────────────
+st.subheader("AI Model")
+st.markdown("Choose which AI provider and model drafts coaching responses and check-in questions. "
+            "Internal functions (evaluation, parsing) always use OpenAI.")
+
+from services.ai_service import PROVIDERS
+
+provider_options = list(PROVIDERS.keys())
+current_provider = settings.get("ai_provider", "openai")
+if current_provider not in provider_options:
+    current_provider = "openai"
+
+col_prov, col_model = st.columns(2)
+with col_prov:
+    new_provider = st.selectbox(
+        "Provider",
+        options=provider_options,
+        index=provider_options.index(current_provider),
+        format_func=lambda x: x.capitalize(),
+    )
+    if new_provider != settings.get("ai_provider", "openai"):
+        db.set_setting("ai_provider", new_provider)
+        # Reset model to provider's default when switching providers
+        db.set_setting("ai_model", PROVIDERS[new_provider][0])
+        st.rerun()
+
+with col_model:
+    model_options = PROVIDERS[new_provider]
+    current_model = settings.get("ai_model", PROVIDERS[new_provider][0])
+    if current_model not in model_options:
+        current_model = model_options[0]
+    new_model = st.selectbox(
+        "Model",
+        options=model_options,
+        index=model_options.index(current_model),
+    )
+    if new_model != settings.get("ai_model", PROVIDERS[new_provider][0]):
+        db.set_setting("ai_model", new_model)
+        st.success(f"Model updated to {new_model}")
+
 # ── Check-in Schedule ─────────────────────────────────────
 st.subheader("Check-in Schedule")
 
@@ -110,13 +150,19 @@ with col3:
         db.set_setting("process_end_hour", str(new_end))
         st.success("End hour updated")
 
-# ── Send Hours ────────────────────────────────────────────
-st.subheader("Send Hours")
-send_hours = settings.get("send_hours", "9,13,19")
-new_send = st.text_input("Hours to send approved responses (comma-separated)", value=send_hours)
-if new_send != send_hours:
-    db.set_setting("send_hours", new_send)
-    st.success("Send hours updated")
+# ── Send Timing ───────────────────────────────────────────
+st.subheader("Send Timing")
+delay_max = int(settings.get("send_delay_max_minutes", "100"))
+new_delay_max = st.number_input(
+    "Max send delay (minutes)",
+    min_value=1,
+    max_value=180,
+    value=delay_max,
+    help="Each approved email gets a random delay of 1 to N minutes before sending, so responses feel human rather than bot-like.",
+)
+if new_delay_max != delay_max:
+    db.set_setting("send_delay_max_minutes", str(new_delay_max))
+    st.success("Send delay updated")
 
 # ── Re-engagement ─────────────────────────────────────────
 st.subheader("Re-engagement")
