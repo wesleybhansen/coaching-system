@@ -6,4 +6,5 @@ apscheduler>=3.10.0
 python-dotenv>=1.0.0
 email-reply-parser>=0.5.12
 pytz>=2024.1
+PyPDF2>=3.0.0
 pytest>=8.0.0

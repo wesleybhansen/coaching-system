@@ -362,6 +362,82 @@ def mock_db(monkeypatch):
     def get_satisfaction_trend(user_id=None, limit=50):
         return []
 
+    # Knowledge base functions
+    storage["knowledge_chunks"] = []
+
+    def get_all_knowledge_sources():
+        sources = {}
+        for chunk in storage["knowledge_chunks"]:
+            name = chunk["source_name"]
+            if name not in sources:
+                sources[name] = {
+                    "source_name": name,
+                    "source_type": chunk["source_type"],
+                    "chunk_count": 0,
+                    "total_words": 0,
+                }
+            sources[name]["chunk_count"] += 1
+            sources[name]["total_words"] += chunk.get("word_count", 0)
+        return sorted(sources.values(), key=lambda s: s["source_name"])
+
+    def get_chunks_by_source(source_name):
+        return [c for c in storage["knowledge_chunks"] if c["source_name"] == source_name]
+
+    def get_chunk_by_id(chunk_id):
+        for c in storage["knowledge_chunks"]:
+            if c["id"] == chunk_id:
+                return c
+        return None
+
+    def insert_knowledge_chunk(data):
+        data.setdefault("id", str(uuid.uuid4()))
+        data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        storage["knowledge_chunks"].append(data)
+        return data
+
+    def update_knowledge_chunk(chunk_id, updates):
+        for c in storage["knowledge_chunks"]:
+            if c["id"] == chunk_id:
+                c.update(updates)
+                return c
+        return None
+
+    def delete_chunks_by_source(source_name):
+        storage["knowledge_chunks"] = [
+            c for c in storage["knowledge_chunks"] if c["source_name"] != source_name
+        ]
+
+    def get_knowledge_stats():
+        sources = set()
+        total_words = 0
+        for c in storage["knowledge_chunks"]:
+            sources.add(c["source_name"])
+            total_words += c.get("word_count", 0)
+        return {
+            "source_count": len(sources),
+            "chunk_count": len(storage["knowledge_chunks"]),
+            "total_words": total_words,
+        }
+
+    def match_knowledge_chunks(query_embedding, match_count=5, stage_filter=None):
+        # Return first N chunks (no real vector search in tests)
+        results = []
+        for c in storage["knowledge_chunks"][:match_count]:
+            results.append({
+                "id": c["id"],
+                "source_name": c["source_name"],
+                "source_type": c["source_type"],
+                "chapter": c.get("chapter"),
+                "title": c.get("title", ""),
+                "content": c["content"],
+                "summary": c.get("summary", ""),
+                "stage": c.get("stage", []),
+                "topics": c.get("topics", []),
+                "word_count": c.get("word_count", 0),
+                "similarity": 0.9,
+            })
+        return results
+
     # Patch all db functions
     import db.supabase_client as db_mod
     monkeypatch.setattr(db_mod, "get_user_by_email", get_user_by_email)
@@ -394,6 +470,14 @@ def mock_db(monkeypatch):
     monkeypatch.setattr(db_mod, "get_all_resources", get_all_resources)
     monkeypatch.setattr(db_mod, "get_confidence_calibration_data", get_confidence_calibration_data)
     monkeypatch.setattr(db_mod, "get_satisfaction_trend", get_satisfaction_trend)
+    monkeypatch.setattr(db_mod, "get_all_knowledge_sources", get_all_knowledge_sources)
+    monkeypatch.setattr(db_mod, "get_chunks_by_source", get_chunks_by_source)
+    monkeypatch.setattr(db_mod, "get_chunk_by_id", get_chunk_by_id)
+    monkeypatch.setattr(db_mod, "insert_knowledge_chunk", insert_knowledge_chunk)
+    monkeypatch.setattr(db_mod, "update_knowledge_chunk", update_knowledge_chunk)
+    monkeypatch.setattr(db_mod, "delete_chunks_by_source", delete_chunks_by_source)
+    monkeypatch.setattr(db_mod, "get_knowledge_stats", get_knowledge_stats)
+    monkeypatch.setattr(db_mod, "match_knowledge_chunks", match_knowledge_chunks)
 
     return storage
 

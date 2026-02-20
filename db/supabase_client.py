@@ -393,6 +393,93 @@ def get_recent_workflow_runs(hours: int = 24, limit: int = 50):
     return resp.data
 
 
+# ── Knowledge Base ─────────────────────────────────────────────
+
+def get_all_knowledge_sources() -> list:
+    """Get distinct sources with chunk counts and word totals."""
+    resp = get_client().table("knowledge_chunks").select("source_name, source_type, word_count").execute()
+    # Aggregate in Python since Supabase REST doesn't support GROUP BY
+    sources = {}
+    for row in resp.data:
+        name = row["source_name"]
+        if name not in sources:
+            sources[name] = {
+                "source_name": name,
+                "source_type": row["source_type"],
+                "chunk_count": 0,
+                "total_words": 0,
+            }
+        sources[name]["chunk_count"] += 1
+        sources[name]["total_words"] += row.get("word_count", 0)
+    return sorted(sources.values(), key=lambda s: s["source_name"])
+
+
+def get_chunks_by_source(source_name: str) -> list:
+    """Get all chunks for a given source, ordered by creation."""
+    resp = (get_client().table("knowledge_chunks")
+            .select("id, source_name, source_type, chapter, title, content, summary, stage, topics, word_count")
+            .eq("source_name", source_name)
+            .order("created_at")
+            .execute())
+    return resp.data
+
+
+def get_chunk_by_id(chunk_id: str) -> dict:
+    resp = (get_client().table("knowledge_chunks")
+            .select("*")
+            .eq("id", chunk_id)
+            .limit(1)
+            .execute())
+    return resp.data[0] if resp.data else None
+
+
+def insert_knowledge_chunk(data: dict):
+    """Insert a single knowledge chunk."""
+    resp = get_client().table("knowledge_chunks").insert(data).execute()
+    return resp.data[0] if resp.data else None
+
+
+def update_knowledge_chunk(chunk_id: str, updates: dict):
+    resp = (get_client().table("knowledge_chunks")
+            .update(updates)
+            .eq("id", chunk_id)
+            .execute())
+    return resp.data[0] if resp.data else None
+
+
+def delete_chunks_by_source(source_name: str):
+    """Delete all chunks for a given source."""
+    get_client().table("knowledge_chunks").delete().eq("source_name", source_name).execute()
+
+
+def get_knowledge_stats() -> dict:
+    """Get aggregate stats: source count, chunk count, total words."""
+    resp = get_client().table("knowledge_chunks").select("source_name, word_count").execute()
+    sources = set()
+    total_words = 0
+    for row in resp.data:
+        sources.add(row["source_name"])
+        total_words += row.get("word_count", 0)
+    return {
+        "source_count": len(sources),
+        "chunk_count": len(resp.data),
+        "total_words": total_words,
+    }
+
+
+def match_knowledge_chunks(query_embedding: list, match_count: int = 5, stage_filter: str = None) -> list:
+    """Call the match_knowledge_chunks RPC function for vector similarity search."""
+    params = {
+        "query_embedding": query_embedding,
+        "match_count": match_count,
+    }
+    if stage_filter:
+        params["filter_stage"] = stage_filter
+
+    resp = get_client().rpc("match_knowledge_chunks", params).execute()
+    return resp.data
+
+
 # ── Analytics ──────────────────────────────────────────────────
 
 def get_confidence_calibration_data() -> list[dict]:

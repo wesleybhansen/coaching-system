@@ -56,14 +56,24 @@ def _retry_with_backoff(func, *args, **kwargs):
     raise last_error
 
 
-def generate_response(user_context: str, model: str = "claude-sonnet-4-6") -> str:
-    """Generate a coaching response using Claude."""
+def generate_response(user_context: str, model: str = "claude-sonnet-4-6", knowledge_context: str = "") -> str:
+    """Generate a coaching response using Claude.
+
+    Args:
+        user_context: The assembled coaching context (user info, history, message)
+        model: Claude model to use
+        knowledge_context: Optional formatted excerpts from Wes's books/lectures
+    """
     client = get_client()
+
+    system_prompt = _get_instructions()
+    if knowledge_context:
+        system_prompt += f"\n\n## Reference Material from Your Books and Lectures\nUse these excerpts to ground your response in your actual teaching. Reference sources naturally (e.g. 'I talk about this in Lecture 7' or 'Chapter 3 of The Launch System covers this'). Do NOT quote them verbatim — paraphrase in your own voice.\n\n{knowledge_context}"
 
     def _call():
         message = client.messages.create(
             model=model,
-            system=_get_instructions(),
+            system=system_prompt,
             messages=[{"role": "user", "content": user_context}],
             temperature=0.7,
             max_tokens=1500,

@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 *.pages
 .streamlit/secrets.toml
+knowledge-base-files/
