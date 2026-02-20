@@ -114,7 +114,7 @@ Think about how frustrating it is to explain your entire business context from s
 
 When a specific lecture, book chapter, or framework is relevant to what you are working on, Wes will point you to it directly. Not a generic "go review the materials" -- more like "Lecture 7 walks through exactly this" or "Chapter 3 of the Launch System has a good framework here." You always know exactly where to look for more depth on a topic.
 
-This means the program's entire knowledge base -- the lectures, the books, the frameworks -- is effectively at your fingertips through every coaching exchange. You do not have to hunt for the right resource. It finds you at the right moment.
+This means the program's complete knowledge base -- four books, the course syllabus, and 42 lectures worth of Wes's teaching -- is effectively at your fingertips through every coaching exchange. The coaching draws directly from Wes's actual writing and teaching material, so the recommendations are precise and grounded. You do not have to hunt for the right resource. It finds you at the right moment.
 
 ### Stage Progression is Celebrated
 
@@ -198,26 +198,31 @@ Your coaching is built around four stages. Understanding which stage you are in 
 
 ## Program Resources at Your Fingertips
 
-Your coaching does not exist in a vacuum. Wes draws on a rich library of program resources and will point you to the right one at the right time. Here is what is available:
+Your coaching does not exist in a vacuum. Wes draws on a deep library of his own original teaching material and will point you to the right resource at the right time. Here is what the coaching system has direct access to:
 
-### The Lectures (Lectures 1-12)
+### The Lecture Series (42 Lectures)
 
-The lecture series forms the backbone of the Launchpad Incubator curriculum. Each lecture covers a specific aspect of building a business from scratch:
+The lecture series forms the backbone of the Launchpad Incubator curriculum. Spanning 42 lectures, it is a comprehensive walk through every stage of building a business from scratch -- from finding your first problem worth solving, all the way through scaling operations and building a team. Each lecture covers a specific topic in depth, and when Wes references one, it means the content is directly relevant to what you are working on right now. Take the time to review it -- it will make your next coaching exchange much more productive.
 
-- **Lectures 1-3:** Foundations -- finding problems, having customer conversations, and validating that a problem is worth solving
-- **Lectures 4-6:** Validation -- testing solutions, understanding willingness to pay, and creating your first offer
-- **Lectures 7-9:** Building momentum -- getting traction, systematizing early wins, and understanding your market position
-- **Lectures 10-12:** Scaling -- growth strategies, team building, and building sustainable operations
+### The Launch System (Book)
 
-When Wes references a lecture, it means the content is directly relevant to what you are working on right now. Take the time to review it -- it will make your next coaching exchange much more productive.
+This is your comprehensive guide to going from idea to validated business. It walks you through the entire launch process step by step -- identifying opportunities, testing assumptions, building offers, and finding your first customers. When Wes says "Chapter 4 of the Launch System covers this," he is pointing you to a specific framework or methodology that applies to your situation.
 
-### The Launch System (Book -- 6 Chapters)
-
-This is your comprehensive guide to going from idea to validated business. The six chapters walk you through the entire launch process step by step. When Wes says "Chapter 4 of the Launch System covers this," he is pointing you to a specific framework or methodology that applies to your situation.
-
-### Ideas That Spread (Book -- 4 Chapters)
+### Ideas That Spread (Book)
 
 This book focuses on positioning, messaging, and making your idea resonate with the right people. If coaching surfaces a question about how to talk about your business, how to reach your audience, or how to make your offer compelling, this is likely where Wes will send you.
+
+### What Everyone Missed (Book)
+
+This book digs into the overlooked fundamentals -- the things most aspiring entrepreneurs skip right past on their way to building something nobody asked for. It is about slowing down, seeing what others miss, and building on a foundation that actually holds up.
+
+### The Opportunity Engine (Book)
+
+This book is about developing the skill of spotting opportunities -- not just once, but repeatedly. It covers how to train your eye for problems worth solving, how to evaluate whether an opportunity has real potential, and how to move from observation to action.
+
+### The Launch Pad Course Syllabus
+
+The course syllabus ties everything together. It maps out the full Launchpad Incubator curriculum -- the sequence, the milestones, and how all the pieces fit. When Wes references where you are in the course, this is the roadmap he is working from.
 
 ### How Resources Are Recommended
 
@@ -338,7 +343,7 @@ Go for it. While check-ins tend to follow the thread of your recent work, you ca
 
 ### Is Coach Wes a real person?
 
-Yes. Wes is a real person and an experienced entrepreneurship coach. The coaching system helps Wes scale his ability to work with many members at once while maintaining the quality and personalization of one-on-one coaching. Every response is informed by Wes's coaching philosophy, his program materials, and his direct involvement in the system. For sensitive situations, stage transitions, or anything that needs a particularly human touch, Wes reviews and often personally crafts the response.
+Yes. Wes is a real person and an experienced entrepreneurship coach. The coaching system helps Wes scale his ability to work with many members at once while maintaining the quality and personalization of one-on-one coaching. Every response is generated by advanced AI (GPT-4o or Claude, depending on configuration) that is deeply grounded in Wes's actual books, lectures, and teaching material -- not generic advice pulled from the internet. The AI draws directly from Wes's complete library of original content, so the coaching always sounds like Wes because it is built on what Wes actually wrote and taught. For sensitive situations, stage transitions, or anything that needs a particularly human touch, Wes reviews and often personally crafts the response.
 
 ### How do I pause or resume coaching?
 

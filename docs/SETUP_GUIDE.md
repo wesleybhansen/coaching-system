@@ -1,12 +1,13 @@
 # Setup Guide -- The Launchpad Incubator Coaching System
 
-You are about to set up a personal AI coaching system that will transform how you support your program members. Once this guide is complete, you will have a fully operational system that sends personalized check-in emails to your members, reads their replies, generates coaching responses in your voice using GPT-4o, and lets you review and approve everything from a clean web dashboard -- all running on autopilot.
+You are about to set up a personal AI coaching system that will transform how you support your program members. Once this guide is complete, you will have a fully operational system that sends personalized check-in emails to your members, reads their replies, generates coaching responses in your voice using OpenAI GPT-4o or Anthropic Claude (your choice of AI provider), and lets you review and approve everything from a clean web dashboard -- all running on autopilot.
 
 This is a one-time setup. Once everything is in place, the system runs itself. Your daily involvement is simply reviewing and approving coaching responses from your dashboard.
 
 The system uses five services that work together seamlessly:
 
-- **OpenAI GPT-4o** -- the AI engine that generates coaching responses grounded in your program content
+- **OpenAI GPT-4o** -- the default AI engine that generates coaching responses grounded in your program content. Even when using Claude as the primary AI provider, OpenAI is still used for embeddings (vector search) and response evaluation.
+- **Anthropic Claude** *(optional)* -- an alternative AI provider for generating coaching responses. If you prefer Claude's coaching style, you can select it as the primary provider in Settings. Requires an Anthropic API key.
 - **Gmail (IMAP/SMTP)** -- sends and receives all coaching emails through your existing email address
 - **Supabase (PostgreSQL)** -- the database that stores users, conversations, settings, and the AI's learning history
 - **Streamlit** -- provides the web dashboard where you manage users, review responses, and monitor the system
@@ -96,6 +97,8 @@ This is what makes the coaching truly yours. A vector store is where you upload 
 7. After uploading, look at the top of the page for the **Vector Store ID**. It looks like `vs_` followed by a long string of letters and numbers (for example, `vs_6985fa853f84819196e012018b0defca`). **Copy this ID** and save it alongside your API key.
 
 You can always come back later to add more files, remove files, or create additional vector stores. As your program evolves and you create new content, just upload it here and the AI will start referencing it immediately.
+
+**Note on AI providers and knowledge storage:** The OpenAI vector store described above is used when OpenAI is selected as your AI provider (the default). When Claude is selected as the AI provider, the system uses a **local knowledge base** stored directly in your Supabase database instead. This local knowledge base is set up automatically when you run the database migrations (specifically `migration_v5.sql` in Step 3.4) -- there is no extra configuration required. To populate it with your program content, you run a one-time ingestion script (`scripts/ingest_knowledge_base.py`) that chunks your materials and stores them as searchable embeddings. You can also manage the knowledge base from the **Knowledge Base** page in the dashboard. Either way -- OpenAI vector store or local knowledge base -- the AI references your specific program content when coaching.
 
 ---
 
@@ -215,7 +218,8 @@ Now you need to create the database tables that the coaching system uses. The sy
 10. **Copy the entire contents** of `db/migration_v2.sql` and **paste it into the SQL Editor**
 11. Click **"Run"**
 12. Again, you should see **"Success. No rows returned"**
-13. **Recommended:** Run `db/seed_model_responses.sql` to populate the model responses table with example coaching responses for each stage. These model responses teach the AI your coaching voice and approach from day one, resulting in better responses right out of the gate.
+13. Repeat the same process for `db/migration_v3.sql`, `db/migration_v4.sql`, and `db/migration_v5.sql` -- open each file, copy its contents, paste into a new query, and click Run. Run them in order (v3, then v4, then v5). Migration v5 specifically creates the `knowledge_chunks` table used by the local knowledge base when Claude is the AI provider.
+14. **Recommended:** Run `db/seed_model_responses.sql` to populate the model responses table with example coaching responses for each stage. These model responses teach the AI your coaching voice and approach from day one, resulting in better responses right out of the gate.
 
 ### Step 3.5: Verify the Database
 
@@ -229,6 +233,7 @@ Confirm that everything was created correctly. This takes less than a minute and
    - `model_responses` -- example coaching responses the AI uses as reference for tone and approach
    - `settings` -- system configuration (key-value pairs)
    - `resources` -- program content references (lectures, chapters) with stage and topic metadata
+   - `knowledge_chunks` -- local knowledge base chunks with vector embeddings (used when Claude is the AI provider)
    - `workflow_runs` -- audit log of every automated workflow execution
 3. Click on the **`settings`** table. You should see rows like:
    - `global_auto_approve_threshold` = `10`
@@ -308,8 +313,16 @@ GitHub Secrets are encrypted environment variables that your workflows use to co
 - **Value:** Your 16-character Gmail App Password (no spaces)
 - Click **"Add secret"**
 
-After adding all six, your secrets list should show:
+**Secret 7: ANTHROPIC_API_KEY** *(optional)*
+- **Name:** `ANTHROPIC_API_KEY`
+- **Value:** Your Anthropic API key (starts with `sk-ant-...`)
+- Click **"Add secret"**
+- **Only needed if you plan to use Claude as the AI provider.** If you are sticking with OpenAI GPT-4o for response generation, you can skip this secret entirely.
+- **Where to get it:** Go to **https://console.anthropic.com**, sign in (or create an account), then navigate to **API Keys** in the left sidebar. Click **"Create Key"**, give it a name like `Coaching System`, and copy the key. Like OpenAI, you will need to add billing/credits to your Anthropic account before the API will work.
+
+After adding all secrets, your secrets list should show:
 ```
+ANTHROPIC_API_KEY          (optional -- only if using Claude)
 GMAIL_ADDRESS
 GMAIL_APP_PASSWORD
 OPENAI_API_KEY
@@ -390,6 +403,7 @@ VECTOR_STORE_ID = "vs_6985fa853f84819196e012018b0defca"
 GMAIL_ADDRESS = "coachwes@thelaunchpadincubator.com"
 GMAIL_APP_PASSWORD = "abcdefghijklmnop"
 DASHBOARD_PASSWORD = "choose-a-strong-password-here"
+ANTHROPIC_API_KEY = "sk-ant-..."  # Optional -- only needed if using Claude as AI provider
 ```
 
 **About DASHBOARD_PASSWORD:** This password protects your dashboard from unauthorized access. Anyone who visits your dashboard URL will need to enter this password before they can see anything. Choose something strong but memorable. If you leave it out or set it to an empty string, the dashboard will not require a password (not recommended for production use).
@@ -413,6 +427,7 @@ DASHBOARD_PASSWORD = "choose-a-strong-password-here"
    - Settings
    - Run Workflows
    - Analytics
+   - Knowledge Base
 5. Click **Settings** and verify the Gmail connection shows **"Gmail connection: OK"** at the bottom of the page
 
 If the dashboard shows a connection error, double-check that your secrets are entered correctly. Go to Streamlit Community Cloud -> your app -> three-dot menu -> "Settings" -> "Secrets" to edit them.
@@ -462,6 +477,7 @@ If you prefer to run the dashboard on your own computer (useful for development,
    GMAIL_ADDRESS=coachwes@thelaunchpadincubator.com
    GMAIL_APP_PASSWORD=abcdefghijklmnop
    COACH_TIMEZONE=America/New_York
+   ANTHROPIC_API_KEY=sk-ant-...          # Optional -- only if using Claude
    ```
    Note: No quotes around the values in `.env` files. No spaces around the `=` sign.
 
@@ -511,6 +527,7 @@ Now that everything is set up, walk through the complete coaching cycle to confi
    - **Send hours:** 9, 13, 19 (9 AM, 1 PM, 7 PM)
    - **Re-engagement days:** 10 (silent users get a nudge after 10 days)
    - **Max response paragraphs:** 3 (keeps coaching responses focused and actionable)
+   - **AI Model:** Check the Provider and Model selection. The default is OpenAI GPT-4o. If you have set up an Anthropic API key (Step 4.2, Secret 7), you can switch the provider to Anthropic and choose a Claude model. The system will use whichever provider and model you select here for generating coaching responses.
 3. Confirm **Gmail Connection** shows **"OK"** at the bottom of the page
 
 ### Step 6.3: Add a Test User
@@ -606,7 +623,7 @@ Once everything is verified, the GitHub Actions workflows run on autopilot. Here
 | Workflow | What It Does | Schedule |
 |---|---|---|
 | **Process Emails** | Reads unread emails from Gmail, parses them, generates AI coaching responses, evaluates quality, and routes to Pending Review, Flagged, or Auto-Approved | Every hour from 8 AM to 9 PM |
-| **Send Approved** | Sends all approved coaching responses via Gmail, with human-like threading and randomized timing delays | 9 AM, 1 PM, and 7 PM |
+| **Send Approved** | Sends all approved coaching responses via Gmail, with human-like threading and randomized timing delays -- each email gets a random delay of 1 to N minutes (configurable in Settings) before sending, so responses feel human rather than bot-like | 9 AM, 1 PM, and 7 PM |
 | **Check In** | Sends personalized check-in emails to users whose schedule includes today | Daily at 9 AM |
 | **Re-engagement** | Sends a friendly nudge to users who have not responded in 10+ days; marks users silent after 17+ days | Daily at 10 AM |
 | **Cleanup** | Catches any emails that may have been missed during the day (a safety net) | Daily at 11 PM |
@@ -633,13 +650,14 @@ Here is the complete list of every environment variable the system uses, where t
 | `GMAIL_IMAP_HOST` | No | -- | IMAP server hostname (default: `imap.gmail.com`). Only change if using a non-Gmail provider. |
 | `GMAIL_SMTP_HOST` | No | -- | SMTP server hostname (default: `smtp.gmail.com`). Only change if using a non-Gmail provider. |
 | `GMAIL_SMTP_PORT` | No | -- | SMTP server port (default: `587`). Only change if using a non-Gmail provider. |
+| `ANTHROPIC_API_KEY` | No | Anthropic Console -> API Keys | Your Anthropic API key (starts with `sk-ant-`). Only needed if using Claude as the AI provider for response generation. |
 | `DASHBOARD_PASSWORD` | No | You choose this | Password to access the Streamlit dashboard. If not set, the dashboard is open to anyone with the URL. |
 
 **Where each variable goes:**
 
 The same credentials need to be entered in up to three places, depending on how you are running the system:
 
-- **GitHub Secrets** (Settings -> Secrets -> Actions): `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `VECTOR_STORE_ID`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`. These are used by the automated workflows.
+- **GitHub Secrets** (Settings -> Secrets -> Actions): `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY`, `VECTOR_STORE_ID`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, and optionally `ANTHROPIC_API_KEY`. These are used by the automated workflows.
 - **Streamlit Cloud Secrets** (Advanced settings on deploy): All of the above plus `DASHBOARD_PASSWORD`. These are used by the web dashboard.
 - **Local `.env` file** (if running locally): All of the above except `DASHBOARD_PASSWORD` (which goes in `.streamlit/secrets.toml` instead).
 
@@ -769,9 +787,13 @@ coaching-system/
       6_settings.py           # System settings and Gmail status
       7_run_workflows.py      # Manual workflow triggers and system status
       8_analytics.py          # Engagement analytics and calibration
+      9_knowledge_base.py     # Knowledge Base management page
   db/
     setup.sql                 # Initial database schema
     migration_v2.sql          # Feature enhancement migration
+    migration_v3.sql          # Per-email send offsets and model selection
+    migration_v4.sql          # Evaluation sub-scores and bulk approve
+    migration_v5.sql          # Knowledge chunks table for local knowledge base
     seed_model_responses.sql  # Example coaching responses
     supabase_client.py        # Database access layer
   workflows/
@@ -783,6 +805,10 @@ coaching-system/
   services/
     gmail_service.py          # Gmail IMAP/SMTP service
     openai_service.py         # OpenAI API service (GPT-4o, RAG, evaluation)
+    anthropic_service.py      # Anthropic Claude API service
+    ai_service.py             # AI provider router (OpenAI or Anthropic)
+    embedding_service.py      # OpenAI embeddings for knowledge base vector search
+    knowledge_service.py      # RAG retrieval and formatting for Claude
     coaching_service.py       # Core business logic and pipeline orchestration
   prompts/
     assistant_instructions.md # AI coaching persona, style, and rules
@@ -799,12 +825,22 @@ coaching-system/
   scripts/
     setup_supabase.py         # Supabase setup helper
     export_finetune_data.py   # Fine-tuning dataset export
+    ingest_knowledge_base.py  # One-time knowledge base ingestion script
   .github/workflows/
     check_in.yml              # GitHub Actions: daily check-ins
     process_emails.yml        # GitHub Actions: hourly email processing
     send_approved.yml         # GitHub Actions: send at 9am/1pm/7pm
     re_engagement.yml         # GitHub Actions: daily re-engagement
     cleanup.yml               # GitHub Actions: nightly cleanup
+  tests/
+    conftest.py               # Shared test fixtures and mocks
+    test_process_emails.py    # Email processing tests
+    test_evaluation.py        # Evaluation routing tests
+    test_send_approved.py     # Send workflow tests
+    test_proactive.py         # Proactive outreach tests
+    test_edge_cases.py        # Edge case tests
+    test_knowledge_base.py    # Knowledge base ingestion and retrieval tests
+    test_ai_service.py        # AI provider routing tests
   config.py                   # Configuration and environment loading
   run_workflow.py             # CLI entry point for running workflows
   requirements.txt            # Python dependencies

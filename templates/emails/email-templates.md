@@ -162,7 +162,7 @@ The check-in scheduler runs Tuesday and Friday at 9am. To change:
 ### Adjusting Tone
 To make emails more/less formal:
 1. Edit templates in this file
-2. Update corresponding content in n8n workflow nodes
+2. Update corresponding content in the GitHub Actions workflows
 
 ### Adding Email Variants
 For A/B testing different check-in formats:

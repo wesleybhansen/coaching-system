@@ -120,12 +120,12 @@ Once the user replies to their first check-in or welcome email, here is what hap
 
 2. **The system parses their email** using an intelligent two-tier approach: first a deterministic parser strips out signatures, quoted text, and boilerplate to extract just their new message content. If that produces a messy result, GPT-4o-mini steps in as an intelligent fallback parser.
 
-3. **The AI generates a coaching response** using GPT-4o, drawing from a rich set of context:
+3. **The AI generates a coaching response** using the configured AI provider (GPT-4o or Claude, selectable on the Settings page), drawing from a rich set of context:
    - The user's profile (name, stage, business idea)
    - Their message content
    - Model coaching responses tailored to their stage
    - Any previous corrections you have made to AI responses for similar situations
-   - Relevant content from your knowledge base (lectures, book chapters, frameworks) retrieved through RAG
+   - Relevant content from the knowledge base (lectures, book chapters, syllabus, frameworks) retrieved through semantic search -- when using Claude, this comes from the local knowledge base stored in Supabase; when using GPT-4o, it comes from the OpenAI vector store
 
 4. **The AI evaluates its own response** for quality, scoring it on a 1-10 confidence scale and checking for safety flags (legal questions, mental health concerns, out-of-scope topics, URLs in the response, etc.).
 
@@ -387,9 +387,10 @@ Here is what to expect and how to manage it:
 
 **Fix**:
 1. Check the user's profile on the Users page. Is the Business idea field populated? Is the Stage correct? The AI relies heavily on these two fields.
-2. Edit the AI's response on the Pending Review page before approving. Every edit you make is saved as a correction and helps the AI improve -- not just for this user, but for all users in similar situations.
-3. After the first 5-10 exchanges, the AI will have more conversation history and a richer journey summary to draw from. Quality improves significantly with more context.
-4. If a response is really off-base, click "Reject" and write a manual response from the coaching Gmail. The user does not need to know the AI was involved -- the experience is seamless.
+2. If you are using Claude as your AI provider, go to the **Knowledge Base** page and verify that source material is loaded (you should see your books, lectures, and syllabus listed with chunk counts). If sources are missing or empty, the AI will not have your teaching material to draw from and responses will be more generic.
+3. Edit the AI's response on the Pending Review page before approving. Every edit you make is saved as a correction and helps the AI improve -- not just for this user, but for all users in similar situations.
+4. After the first 5-10 exchanges, the AI will have more conversation history and a richer journey summary to draw from. Quality improves significantly with more context.
+5. If a response is really off-base, click "Reject" and write a manual response from the coaching Gmail. The user does not need to know the AI was involved -- the experience is seamless.
 
 ---
 
@@ -481,7 +482,8 @@ Here is where everything lives in the sidebar, for quick reference during onboar
 | **Conversations** | Browse a user's full conversation history to understand their journey |
 | **Users** | Add new users, edit profiles, change status, configure check-in days |
 | **Corrections** | View corrections you have made (these teach the AI over time) |
-| **Settings** | Adjust auto-approve threshold, default check-in days, send hours |
+| **Knowledge Base** | View and manage the source material the AI draws from when using Claude (books, lectures, syllabus). Check that sources are loaded and preview individual chunks |
+| **Settings** | Adjust auto-approve threshold, AI provider (GPT-4o or Claude), default check-in days, send hours |
 | **Run Workflows** | Manually trigger Process Emails, Send Approved, Check In, etc. |
 | **Analytics** | Monitor system performance, confidence calibration, and engagement trends |
 

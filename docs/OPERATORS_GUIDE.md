@@ -2,7 +2,7 @@
 
 This is the definitive operations manual for the AI-powered email coaching system used by The Launchpad Incubator. It covers every aspect of day-to-day system management: reviewing AI-generated responses, managing users, configuring settings, monitoring health, tuning performance, and handling edge cases.
 
-The system runs on a simple, powerful loop: users email in, the AI drafts a coaching response in Wes's voice, and you review and approve it before it goes out. Everything flows through the Streamlit dashboard. Your corrections teach the AI over time, making it smarter with every edit.
+The system supports two AI providers for response generation -- OpenAI GPT-4o and Anthropic Claude -- both grounded in Wes's teaching materials (books, lectures, and frameworks) through retrieval-augmented generation (RAG). You choose the provider on the Settings page, and the system handles the rest. The core loop is simple: users email in, the AI drafts a coaching response in Wes's voice, and you review and approve it before it goes out. Everything flows through the Streamlit dashboard. Your corrections teach the AI over time, making it smarter with every edit.
 
 ---
 
@@ -90,6 +90,8 @@ For each pending conversation:
 5. If the response is good as-is: click **Approve**.
 6. If the response needs changes: edit the text in the text area, then click **Approve**. The correction is automatically saved and will help the AI improve.
 7. If the response is wrong or inappropriate: click **Reject** to discard it, or click **Flag** to revisit it later.
+
+**A note on AI providers:** If the system is configured to use Anthropic (Claude) as the AI provider, responses will automatically reference Wes's books and lectures via the local knowledge base stored in Supabase. No action is needed from you -- the retrieval happens behind the scenes during response generation, just like it does with OpenAI's vector store. The only difference is where the knowledge lives, not how you review it.
 
 **Step 4: Check Workflow Health**
 
@@ -224,6 +226,24 @@ This is the single most important setting in the system. It controls whether res
 4. **Continue lowering gradually.** Score 8 is a common long-term target for established programs. Going below 7 is not recommended -- even well-trained AI benefits from occasional human review.
 
 Per-user overrides are also possible via the `auto_approve_threshold` field on each user record, though this requires direct database access (not exposed in the dashboard UI).
+
+### AI Provider and Model
+
+The Settings page lets you choose which AI provider generates coaching responses and check-in questions. This is a system-wide setting -- it applies to all users.
+
+- **OpenAI**: When selected, the system uses OpenAI's built-in vector store (file_search) for RAG retrieval. Your program materials (books, lectures, frameworks) are stored in OpenAI's hosted vector store, and the AI searches them automatically when generating responses.
+- **Anthropic (Claude)**: When selected, the system automatically retrieves relevant excerpts from the local knowledge base -- stored in Supabase using pgvector -- and injects them directly into Claude's prompt. This gives Claude the same grounding in Wes's teaching materials, but the knowledge lives in your own database rather than a third-party vector store.
+
+Regardless of which provider you choose for response generation, all internal functions -- evaluation scoring, email parsing, satisfaction analysis, and journey summary updates -- always use OpenAI GPT-4o-mini. These are lightweight, structured tasks where GPT-4o-mini is fast, cheap, and reliable. The provider setting only affects the main coaching response and check-in question generation.
+
+**Available models:**
+
+| Provider | Models |
+|----------|--------|
+| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-5.2 |
+| **Anthropic** | claude-sonnet-4-6, claude-opus-4-6, claude-opus-4-5-20250918 |
+
+To change the provider or model, go to **Settings** in the dashboard, update the AI Provider and Model dropdowns, and click Save. The change takes effect on the next workflow run -- no restart or redeployment needed.
 
 ### Check-in Schedule
 
@@ -473,6 +493,16 @@ Check Streamlit Community Cloud status. Verify that:
 - Secrets are still configured in the Streamlit app settings (three-dot menu -> Settings -> Secrets).
 - Recent code pushes did not introduce syntax errors (check the Streamlit deployment logs).
 
+**"Claude responses are generic / not referencing books or lectures"**
+
+The AI is using Anthropic (Claude) as the provider, but responses feel generic and do not reference Wes's teaching materials. Common causes:
+- **Knowledge base is empty.** The ingestion script has not been run, so there are no chunks for the system to retrieve. Go to the **Knowledge Base** page in the dashboard. If it shows 0 sources or 0 chunks, the knowledge base needs to be populated. Run the ingestion script (`scripts/ingest_knowledge_base.py`) to process your source files and load them into the database.
+- **Embedding service failed.** The system uses OpenAI's embedding API to generate vectors for knowledge base search -- even when Claude is the response provider. Verify that `OPENAI_API_KEY` is set and valid in your secrets. Without it, embeddings cannot be generated, and retrieval will return nothing.
+- **The knowledge_chunks table does not exist.** The database migration that creates the pgvector table may not have been applied. Verify that `migration_v5.sql` was run in the Supabase SQL Editor. You can check by going to the Table Editor in Supabase and looking for the `knowledge_chunks` table.
+- **Source files were not properly processed.** If the Knowledge Base page shows sources but 0 chunks under a source, the file may have failed during chunking. Delete the source and re-upload it via the Knowledge Base page.
+
+If you switch back to OpenAI as the provider, this issue does not apply -- OpenAI uses its own hosted vector store, which is managed separately.
+
 ### Emergency Procedures
 
 **System is completely down (all workflows failing)**
@@ -520,6 +550,7 @@ There is no undo for sent emails. The response has already been delivered. To co
 - [ ] **Check resource references.** On the Conversations page, look at which resources the AI is recommending. Are they appropriate and relevant? Are any outdated or no longer part of the curriculum?
 - [ ] **Review fine-tuning readiness.** On Run Workflows, check the fine-tuning metrics. If you have 50+ usable corrections and have not fine-tuned yet (or it has been 2+ months since the last fine-tune), consider exporting and training a new model.
 - [ ] **Update assistant instructions.** Has the coaching approach evolved? Are there new resources, new stages, or new topics that need to be reflected in the prompts? Edit `prompts/assistant_instructions.md` and `prompts/evaluation_prompt.md` as needed.
+- [ ] **Check knowledge base health.** Go to the Knowledge Base page. Verify all sources are present and chunk counts look right. If you've added new teaching materials, upload them via the Knowledge Base page or re-run the ingestion script.
 - [ ] **Review system settings.** Are the check-in days, send hours, processing windows, and re-engagement timing still appropriate? Adjust as the program evolves.
 
 ---
@@ -531,12 +562,14 @@ There is no undo for sent emails. The response has already been delivered. To co
 | Dashboard | Streamlit Community Cloud | Operator interface for review, management, settings, analytics |
 | Scheduled Jobs | GitHub Actions | Automated cron workflows (5 total) running the coaching pipeline |
 | Database | Supabase (PostgreSQL) | Users, conversations, corrections, settings, workflow logs |
-| AI (Response Generation) | OpenAI GPT-4o | Generates coaching responses with knowledge base search (RAG) |
+| AI (Response Generation) | OpenAI GPT-4o or Anthropic Claude | Generates coaching responses with knowledge base search (RAG) |
+| AI (Embeddings) | OpenAI text-embedding-3-small | Generates vector embeddings for knowledge base search |
 | AI (Evaluation) | OpenAI GPT-4o-mini | Scores responses, detects flags, detects stages, analyzes satisfaction |
 | AI (Parsing Fallback) | OpenAI GPT-4o-mini | Email parsing when deterministic parser returns empty or messy results |
 | AI (Summaries) | OpenAI GPT-4o-mini | Generates journey summary updates after each sent response |
 | Email | Gmail (Google Workspace) | IMAP for reading, SMTP for sending, with human-like threading |
-| Knowledge Base | OpenAI Vector Store | Contains program curriculum (lectures, books, frameworks) for RAG retrieval |
+| Knowledge Base (OpenAI) | OpenAI Vector Store | Contains program curriculum for RAG retrieval when OpenAI is the selected provider |
+| Knowledge Base (Claude) | Supabase pgvector | Local vector store with Wes's books and lectures for Claude's RAG retrieval |
 
 ### Key Files for Operators
 
@@ -546,6 +579,8 @@ There is no undo for sent emails. The response has already been delivered. To co
 | `prompts/evaluation_prompt.md` | How responses are scored, flagged, and evaluated for quality |
 | `dashboard/pages/6_settings.py` | All configurable settings (also accessible via the Settings page in the dashboard) |
 | `config.py` | Environment variable loading (secrets and credential management) |
+| `scripts/ingest_knowledge_base.py` | One-time script to populate the knowledge base from PDF/text source files |
+| `dashboard/pages/9_knowledge_base.py` | Knowledge Base management page (browse, preview, delete, upload) |
 
 ### Email Filtering
 

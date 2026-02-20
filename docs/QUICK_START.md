@@ -45,9 +45,9 @@ A few sentences for each is all it takes. These check-ins create the rhythm that
 
 ## Step 3: Get Coaching Feedback
 
-Within about a day of your reply, you will get a coaching response back from Wes. This is not generic advice. Your coach remembers your business idea, your stage, your history, and the specific challenges you have shared. Expect responses that are direct, focused, and built around one or two things you can act on immediately.
+Within about a day of your reply, you will get a coaching response back from Wes. This is not generic advice. Your coach remembers your business idea, your stage, your history, and the specific challenges you have shared. Every response is grounded in Wes's complete library of books and lectures -- the same material that drives the Launchpad curriculum. Expect responses that are direct, focused, and built around one or two things you can act on immediately.
 
-When a specific lecture or book chapter is relevant to what you are working on, Wes will point you to it by name -- "Lecture 7 walks through exactly this" or "Chapter 3 of the Launch System has a good framework here." You always know exactly where to go for more depth.
+When a specific lecture or book chapter is relevant to what you are working on, Wes will point you to it by name -- whether that is a validation framework from *The Launch System*, a marketing insight from *Ideas That Spread*, a hidden opportunity from *The Opportunity Engine*, or a specific lecture from the course. You always know exactly where to go for more depth.
 
 The pattern is simple: you share what is happening, you get targeted feedback, you take action, and we do it again. That cycle is what drives real progress.
 

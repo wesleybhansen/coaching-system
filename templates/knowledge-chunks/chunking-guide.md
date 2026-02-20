@@ -193,7 +193,7 @@ Before importing, verify each chunk:
 - Update chunks if source material changes
 
 ### Tracking Usage
-- The n8n workflows update "Usage Count" when a chunk is referenced
+- Usage count is updated when a chunk is referenced during response generation
 - Review low-usage chunks - they may need better tagging
 - Review high-usage chunks - consider if they're too broad
 

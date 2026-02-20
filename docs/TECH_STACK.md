@@ -6,11 +6,14 @@
 2. [Architecture Diagram](#architecture-diagram)
 3. [Tech Stack Components](#tech-stack-components)
    - [OpenAI (AI Engine)](#1-openai-ai-engine)
-   - [Gmail (Email Transport)](#2-gmail-email-transport)
-   - [Supabase (Database)](#3-supabase-database)
-   - [Streamlit (Dashboard)](#4-streamlit-dashboard)
-   - [GitHub Actions (Scheduling)](#5-github-actions-scheduling)
-   - [Python (Application Layer)](#6-python-application-layer)
+   - [Anthropic (Claude)](#2-anthropic-claude)
+   - [Embedding Service](#3-embedding-service)
+   - [Knowledge Service (Local RAG)](#4-knowledge-service-local-rag)
+   - [Gmail (Email Transport)](#5-gmail-email-transport)
+   - [Supabase (Database)](#6-supabase-database)
+   - [Streamlit (Dashboard)](#7-streamlit-dashboard)
+   - [GitHub Actions (Scheduling)](#8-github-actions-scheduling)
+   - [Python (Application Layer)](#9-python-application-layer)
 4. [Data Flow Architecture](#data-flow-architecture)
    - [Inbound Email Processing Pipeline](#inbound-email-processing-pipeline)
    - [Outbound Email Pipeline](#outbound-email-pipeline)
@@ -34,11 +37,11 @@ The architecture is designed around two core principles: **email-first** (meet u
 Under the hood, the system orchestrates six services into a cohesive pipeline:
 
 - **Receives emails** from program members via Gmail IMAP polling on an hourly schedule.
-- **Generates personalized coaching responses** using OpenAI GPT-4o with retrieval-augmented generation (RAG), pulling relevant program content from a vector store containing all lecture and book material.
+- **Generates personalized coaching responses** using either OpenAI GPT-4o or Anthropic Claude (configurable per-system), with retrieval-augmented generation (RAG) pulling relevant program content. The system is provider-agnostic for response generation: when OpenAI is selected, its built-in `file_search` vector store handles RAG retrieval. When Claude is selected, a local knowledge base stored in Supabase using pgvector provides RAG via OpenAI embeddings and cosine similarity search. An AI service router dispatches requests to the appropriate provider transparently.
 - **Evaluates response quality** with a secondary AI model (GPT-4o-mini) that scores confidence, detects safety flags, identifies the member's entrepreneurship stage, and analyzes engagement satisfaction.
 - **Routes responses through a review pipeline** with three outcomes: Auto-approved (high confidence, no flags), Pending Review (moderate confidence), or Flagged (legal, mental health, out-of-scope, or URL issues).
 - **Sends approved responses** via Gmail SMTP with human-like threading and randomized timing delays that make the interaction feel natural.
-- **Provides a web dashboard** (Streamlit) for administrative management of users, conversations, corrections, settings, and analytics.
+- **Provides a web dashboard** (Streamlit) for administrative management of users, conversations, corrections, settings, knowledge base content, and analytics.
 - **Runs automated workflows** on scheduled cron jobs via GitHub Actions, covering email processing, response sending, daily check-ins, re-engagement nudges, and cleanup.
 
 The result is a system that feels like a personal coach to each member while operating at scale with minimal operator overhead.
@@ -74,26 +77,36 @@ The result is a system that feels like a personal coach to each member while ope
                           | (Business Logic)   |
                           +--------+----------+
                                    |
-                    +--------------+--------------+
-                    |                              |
-           +--------v----------+         +--------v----------+
-           |  OpenAI Service   |         |  Supabase Client  |
-           |  GPT-4o (RAG)     |         |  (PostgreSQL)     |
-           |  GPT-4o-mini      |         +-------------------+
-           |  Vector Store     |
-           +-------------------+
-                                          +-------------------+
-                                          | Streamlit Dashboard|
-                                          | (Admin Interface) |
-                                          +-------------------+
-                                                   |
-                                          +--------v----------+
-                                          | GitHub Actions     |
-                                          | (Cron Scheduler)   |
-                                          +-------------------+
+              +--------------------+--------------------+
+              |                    |                     |
+    +---------v--------+  +-------v---------+  +--------v--------+
+    |   AI Service     |  | Supabase Client |  | Knowledge       |
+    |   (Router)       |  | (PostgreSQL)    |  | Service (RAG)   |
+    +--------+---------+  +-------+---------+  +--------+--------+
+              |                    |                     |
+     +--------+--------+          |            +--------+--------+
+     |                  |         |            |                  |
++----v------+   +-------v---+    |   +--------v-------+  +------v--------+
+| OpenAI    |   | Anthropic |    |   | Embedding      |  | Supabase      |
+| Service   |   | Service   |    |   | Service        |  | pgvector      |
+| GPT-4o    |   | Claude    |    |   | text-embedding |  | knowledge     |
+| GPT-4o-   |   |           |    |   | -3-small       |  | _chunks       |
+| mini      |   +-----------+    |   +----------------+  +---------------+
+| Vector    |                    |
+| Store     |                    |
++-----------+                    |
+                          +------v-----------+
+                          | Streamlit Dashboard|
+                          | (Admin Interface)  |
+                          +-------------------+
+                                   |
+                          +--------v----------+
+                          | GitHub Actions     |
+                          | (Cron Scheduler)   |
+                          +-------------------+
 ```
 
-The architecture is deliberately simple. There are no message queues, no microservices, no container orchestration. Each workflow is a single Python script that runs, does its job, and exits. GitHub Actions handles the scheduling. Supabase handles the state. This simplicity makes the system easy to understand, debug, and maintain.
+The architecture is deliberately simple. There are no message queues, no microservices, no container orchestration. Each workflow is a single Python script that runs, does its job, and exits. GitHub Actions handles the scheduling. Supabase handles the state. The AI Service router abstracts the choice of AI provider, allowing the system to switch between OpenAI and Anthropic Claude without changing any upstream logic. This simplicity makes the system easy to understand, debug, and maintain.
 
 ---
 
@@ -125,13 +138,37 @@ GPT-4o-mini handles high-volume, lower-stakes tasks where speed and cost efficie
 
 The evaluation temperature is set to **0.2** for maximum determinism and consistency across evaluations.
 
-#### RAG Implementation (Responses API with file_search)
+#### Embedding Service (text-embedding-3-small)
 
-Rather than building a custom retrieval pipeline with embeddings, vector databases, and chunking logic, the system leverages OpenAI's built-in `file_search` tool through the Responses API. This approach offloads vector storage, chunking, and retrieval entirely to OpenAI's infrastructure -- reducing complexity while maintaining high retrieval quality.
+The system uses OpenAI's `text-embedding-3-small` model to generate vector embeddings for the local knowledge base. This model produces 1536-dimensional embeddings and is used for two purposes:
+
+- **Ingestion-time embedding**: When new knowledge base content is ingested (books, lectures, syllabi), each chunk is embedded and stored in the Supabase `knowledge_chunks` table alongside its text content.
+- **Query-time embedding**: When Claude is the selected AI provider, the member's message is embedded at query time so it can be compared against stored chunk embeddings via cosine similarity search.
+
+The embedding model is extremely cost-efficient at approximately $0.02 per million tokens, making it practical to embed large volumes of program content and run frequent similarity searches without meaningful cost impact.
+
+#### RAG Implementation (Dual Architecture)
+
+The system implements two parallel RAG strategies, selected automatically based on which AI provider is configured:
+
+**OpenAI RAG (file_search)**
+
+When OpenAI GPT-4o is the selected provider, the system leverages OpenAI's built-in `file_search` tool through the Responses API. This approach offloads vector storage, chunking, and retrieval entirely to OpenAI's infrastructure -- reducing complexity while maintaining high retrieval quality.
 
 - **Vector Store**: Contains the complete program curriculum -- all lectures, book chapters, frameworks, and coaching materials.
 - When generating a coaching response, the API automatically searches the vector store for content relevant to the member's current situation and injects it into the model's context window alongside the conversation history and user profile.
 - This means the AI can say things like "Lecture 7 walks through exactly this scenario" because it has actually retrieved and read the relevant content.
+
+**Claude RAG (local pgvector)**
+
+When Anthropic Claude is the selected provider, the system uses a local knowledge base stored in Supabase with the pgvector extension. The retrieval pipeline works as follows:
+
+1. The member's message is embedded using OpenAI `text-embedding-3-small`.
+2. The resulting vector is compared against all stored chunk embeddings using cosine similarity via the `match_knowledge_chunks()` Supabase RPC function.
+3. The top 5 most relevant chunks are retrieved and formatted as a `knowledge_context` block.
+4. This context is injected into the system prompt sent to Claude, giving the model access to the same program curriculum content that OpenAI's file_search provides.
+
+Both approaches achieve the same result -- grounding AI responses in actual program content -- but through different mechanisms. The local pgvector approach has the advantage of being provider-independent (any LLM can use it) and gives full control over chunking, tagging, and retrieval logic.
 
 #### Retry and Resilience
 
@@ -144,7 +181,82 @@ All OpenAI API calls use exponential backoff retry logic to handle transient fai
 
 ---
 
-### 2. Gmail (Email Transport)
+### 2. Anthropic (Claude)
+
+Anthropic Claude serves as an alternative AI provider for response generation and check-in question generation. When Claude is selected as the active provider (via system settings), the AI Service router dispatches generation requests to the Anthropic Messages API instead of the OpenAI Responses API. Claude receives the same assistant instructions, user context, conversation history, and stage-specific coaching guidance as GPT-4o -- the only difference is the underlying model and how RAG context is delivered.
+
+#### How Context Is Delivered
+
+When OpenAI is the provider, RAG happens implicitly through the `file_search` tool -- the model retrieves relevant content from the vector store on its own. When Claude is the provider, RAG happens explicitly: the Knowledge Service retrieves the top 5 most relevant knowledge chunks via pgvector cosine similarity search and injects them as a `knowledge_context` parameter in the system prompt. Claude then references this content when generating its coaching response, enabling the same curriculum-grounded advice (e.g., "this is covered in Lecture 12") without needing access to OpenAI's vector store.
+
+#### What Does Not Change
+
+Internal evaluation and utility functions -- confidence scoring, flag detection, stage detection, satisfaction analysis, email parsing fallback, and journey summary generation -- always use OpenAI GPT-4o-mini regardless of which provider is selected for generation. These tasks are formulaic, high-volume, and cost-sensitive, making the smaller OpenAI model the right tool. This split keeps costs low and evaluation behavior consistent across provider switches.
+
+#### Retry and Resilience
+
+Anthropic API calls use the same exponential backoff retry pattern as OpenAI calls (3 retries: 2s, 4s, 8s) to handle transient failures gracefully.
+
+---
+
+### 3. Embedding Service
+
+The Embedding Service is a thin wrapper around OpenAI's `text-embedding-3-small` model, responsible for all vector embedding operations in the system. It serves two consumers:
+
+- **Knowledge base ingestion** (`scripts/ingest_knowledge_base.py`): Embeds each content chunk during the ingestion pipeline so it can be stored with its vector representation in the `knowledge_chunks` table.
+- **Knowledge Service query** (`services/knowledge_service.py`): Embeds the member's message at query time so it can be compared against stored chunk embeddings via cosine similarity.
+
+The model produces 1536-dimensional vectors and costs approximately $0.02 per million tokens. Embedding the entire knowledge base (4 books, 1 syllabus, 40 lecture transcripts) costs less than $0.10 total. Query-time embeddings are negligible in cost since each query is a single short text.
+
+---
+
+### 4. Knowledge Service (Local RAG)
+
+The Knowledge Service manages retrieval-augmented generation for the local pgvector knowledge base. It is the Claude provider's equivalent of OpenAI's built-in `file_search` -- but fully under the system's control.
+
+#### Knowledge Base Contents
+
+The local knowledge base contains the complete Launchpad Incubator curriculum:
+
+- **4 books**: *The Launch System* (~300pp), *Ideas That Spread* (~200pp), *What Everyone Missed* (~80pp), *The Opportunity Engine* (~250pp)
+- **1 syllabus**: The complete program syllabus with module structure and learning objectives
+- **40 lecture transcripts**: Full transcripts of all program lecture recordings
+
+#### Storage and Retrieval
+
+- Content is stored in the Supabase `knowledge_chunks` table using the pgvector extension.
+- Each chunk has a `vector(1536)` embedding column with an IVFFlat index optimized for cosine similarity search.
+- Retrieval is performed via the `match_knowledge_chunks()` Supabase RPC function, which accepts a query embedding and returns the top N most similar chunks ranked by cosine similarity.
+- The default retrieval count is 5 chunks, providing enough context for grounded responses without overwhelming the model's context window.
+
+#### Chunk Metadata and Tagging
+
+Each knowledge chunk is enriched with AI-generated metadata during ingestion:
+
+- **title**: A descriptive title for the chunk's content
+- **summary**: A brief summary of what the chunk covers
+- **stages**: Which entrepreneurship stages (Ideation, Early Validation, Late Validation, Growth) the content is most relevant to
+- **topics**: Subject tags (e.g., "customer discovery", "pricing strategy", "market validation")
+
+This metadata is generated by GPT-4o-mini during ingestion and enables future enhancements like stage-filtered retrieval and topic-based browsing on the dashboard.
+
+#### Ingestion Pipeline
+
+The knowledge base is populated by `scripts/ingest_knowledge_base.py`, which processes source documents through a multi-step pipeline:
+
+1. Extract text from PDF files using PyPDF2
+2. Split text into semantically meaningful chunks (by chapter for books, by lecture for transcripts)
+3. Generate metadata tags (title, summary, stages, topics) for each chunk using GPT-4o-mini
+4. Generate vector embeddings for each chunk using OpenAI `text-embedding-3-small`
+5. Upsert chunks with their embeddings and metadata into the `knowledge_chunks` table
+
+#### Prompt Formatting
+
+When the Knowledge Service retrieves relevant chunks, it formats them into a structured `knowledge_context` block that is prepended to the system prompt for Claude. Each chunk includes its source name, title, and content text, giving the model clear provenance for each piece of curriculum content it references.
+
+---
+
+### 5. Gmail (Email Transport)
 
 Gmail serves as both the inbound and outbound transport layer. The system connects using standard IMAP and SMTP protocols with App Password authentication -- no OAuth complexity, no token refresh flows, just a secure, reliable email connection.
 
@@ -169,7 +281,7 @@ Gmail serves as both the inbound and outbound transport layer. The system connec
 
 ---
 
-### 3. Supabase (Database)
+### 6. Supabase (Database)
 
 The persistence layer is a PostgreSQL database hosted on Supabase, accessed through the Python `supabase` client library using a singleton connection pattern. Supabase was chosen for its generous free tier, built-in SQL editor (useful for schema management), and straightforward REST API.
 
@@ -188,12 +300,13 @@ The persistence layer is a PostgreSQL database hosted on Supabase, accessed thro
 | `resources` | Program resources with topic and stage metadata | title, description, topics (array), stage (22 seeded resources covering the full curriculum) |
 | `workflow_runs` | Audit log of all automated workflow executions | workflow name, status, timestamp, details |
 | `model_responses` | Example ideal responses by stage for context injection | stage, scenario, ideal response (used to ground the AI's tone and approach) |
+| `knowledge_chunks` | Chunked and embedded program content for local RAG | source_name, source_type, chapter, title, content, summary, stage[], topics[], word_count, embedding vector(1536) |
 
 The `users` table serves a dual purpose, tracking both coaching state (stage, business idea, current challenge, journey summary) and operational state (onboarding step, check-in days, satisfaction score, Gmail threading IDs). This single-table design keeps all user context in one queryable location, simplifying the context-building process that feeds the AI.
 
 ---
 
-### 4. Streamlit (Dashboard)
+### 7. Streamlit (Dashboard)
 
 The admin dashboard is built with Streamlit and hosted on Streamlit Community Cloud (free tier). It provides a complete management interface for the coaching system -- from reviewing individual AI responses to monitoring system-wide analytics.
 
@@ -203,7 +316,7 @@ The admin dashboard is built with Streamlit and hosted on Streamlit Community Cl
 
 #### Pages
 
-The dashboard uses Streamlit's multipage app pattern, with pages auto-discovered from the `dashboard/pages/` directory. There are 9 pages in total:
+The dashboard uses Streamlit's multipage app pattern, with pages auto-discovered from the `dashboard/pages/` directory. There are 10 pages in total:
 
 1. **Home** (`app.py`) -- Quick stats overview showing active users, pending reviews, recent workflow runs, and system health at a glance. This is the operator's first stop each day.
 
@@ -221,11 +334,13 @@ The dashboard uses Streamlit's multipage app pattern, with pages auto-discovered
 
 8. **Run Workflows** -- Operational control center. Displays system health checks (database connectivity, Gmail status, Python version, migration status), the automated schedule table showing all cron jobs, manual trigger buttons to run any workflow on demand, a fine-tuning data export tool with step-by-step instructions, and a history of recent workflow runs with expandable details.
 
-9. **Analytics** -- Data visualizations covering user overview metrics, confidence calibration analysis (showing edit rates by confidence score to validate threshold settings), response time tracking, correction analytics (distribution by type and stage), and satisfaction trend charts.
+9. **Knowledge Base** -- Browse all knowledge base sources and chunks, view aggregate stats (source count, chunk count, total word count), preview individual chunk content with AI-generated metadata tags (title, summary, stages, topics), delete sources (cascades to all associated chunks), and upload new documents that are automatically chunked, tagged with GPT-4o-mini, and embedded with OpenAI `text-embedding-3-small`.
+
+10. **Analytics** -- Data visualizations covering user overview metrics, confidence calibration analysis (showing edit rates by confidence score to validate threshold settings), response time tracking, correction analytics (distribution by type and stage), and satisfaction trend charts.
 
 ---
 
-### 5. GitHub Actions (Scheduling)
+### 8. GitHub Actions (Scheduling)
 
 All automated workflows run on GitHub Actions using cron triggers. This provides reliable scheduling, built-in logging, manual override capabilities, and secret management without requiring a dedicated server, cloud functions, or always-on infrastructure.
 
@@ -248,7 +363,7 @@ All automated workflows run on GitHub Actions using cron triggers. This provides
 
 ---
 
-### 6. Python (Application Layer)
+### 9. Python (Application Layer)
 
 The application is written in Python 3.9+ (leveraging `zoneinfo` from the standard library for timezone handling). The codebase follows a service-oriented architecture with clear separation of concerns: services handle external integrations, workflows orchestrate business processes, and the dashboard provides the operator interface.
 
@@ -262,6 +377,8 @@ The application is written in Python 3.9+ (leveraging `zoneinfo` from the standa
 | `email-reply-parser` | >= 0.5.12 | Deterministic email thread parsing |
 | `python-dotenv` | >= 1.0.0 | Environment variable loading from `.env` files |
 | `pytz` | >= 2024.1 | Timezone fallback for environments lacking `zoneinfo` data |
+| `anthropic` | >= 0.45.0 | Anthropic Claude API client |
+| `PyPDF2` | >= 3.0.0 | PDF text extraction for knowledge base ingestion |
 | `pytest` | >= 8.0.0 | Test framework |
 
 #### Configuration Strategy
@@ -293,7 +410,10 @@ Gmail Inbox (IMAP fetch)
       |-- Relevant program resources (matched by stage and topic)
       |-- Stage-scoped corrections from corrected_responses table
       |-- Model responses for the user's current stage
-  --> Generate coaching response (GPT-4o via Responses API with file_search RAG)
+  --> Generate coaching response (routed by AI Service):
+      |-- If OpenAI: GPT-4o via Responses API with file_search RAG
+      |-- If Anthropic: Claude via Messages API with local pgvector RAG
+      |   (embed query --> cosine similarity search --> inject top 5 chunks into system prompt)
   --> Evaluate response (GPT-4o-mini):
       |-- Confidence score (1-10)
       |-- Flag detection (legal, mental health, out-of-scope, URLs)
@@ -416,7 +536,10 @@ settings: standalone key-value store
 resources: standalone reference table (22 seeded records)
 workflow_runs: standalone audit log
 model_responses: standalone reference table (example responses by stage)
+knowledge_chunks: standalone content store (embedded program curriculum for local RAG)
 ```
+
+**Note on knowledge_chunks**: The `embedding` column uses the `vector(1536)` type provided by the pgvector extension. An IVFFlat index is built on this column for efficient cosine similarity search. The `match_knowledge_chunks()` RPC function performs the similarity query, accepting a query embedding vector and returning the top N most similar chunks ranked by cosine distance.
 
 ### Key Indexes and Query Patterns
 
@@ -441,6 +564,12 @@ Every AI-generated response passes through evaluation before reaching a member. 
 ### Dual-Model Architecture
 
 Using GPT-4o for generation and GPT-4o-mini for evaluation is a deliberate cost/quality optimization. Generation tasks benefit from the larger model's superior reasoning and creativity. Evaluation tasks are more formulaic (score this response, detect these flags) and run well on the smaller, faster, cheaper model. This keeps API costs low while maintaining high generation quality.
+
+### Multi-Provider AI Architecture
+
+The system is designed to be provider-agnostic for response generation. An AI Service router (`services/ai_service.py`) sits between the business logic (Coaching Service) and the individual AI providers (OpenAI Service, Anthropic Service). When the Coaching Service requests a coaching response or check-in question, the AI Service reads the configured provider from system settings and dispatches the request to the appropriate service. This means switching from GPT-4o to Claude (or back) requires changing a single setting -- no code changes, no redeployment.
+
+Critically, only generation tasks (coaching responses and check-in questions) are routed through the provider abstraction. All internal evaluation and utility functions -- confidence scoring, flag detection, stage detection, satisfaction analysis, email parsing fallback, and journey summary generation -- always use OpenAI GPT-4o-mini regardless of which provider is selected for generation. These tasks are formulaic, high-volume, and cost-sensitive. Keeping them on a single consistent model ensures predictable evaluation behavior and low costs, while allowing the creative generation work to leverage whichever model produces the best coaching responses.
 
 ### Stage-Specific Coaching
 
@@ -476,7 +605,7 @@ The system is designed to fail gracefully:
 
 ### Privacy-Conscious Architecture
 
-No user data is sent to any external service beyond OpenAI, which is required for response generation and evaluation. The Supabase database, Gmail transport, and Streamlit dashboard form a closed loop. There are no analytics services, no third-party integrations, and no data sharing beyond what is strictly necessary for the coaching function.
+No user data is sent to any external service beyond OpenAI (for generation, evaluation, and embeddings) and Anthropic (for generation, when Claude is the selected provider). The Supabase database, Gmail transport, and Streamlit dashboard form a closed loop. There are no analytics services, no third-party integrations, and no data sharing beyond what is strictly necessary for the coaching function.
 
 ---
 
@@ -494,6 +623,7 @@ No user data is sent to any external service beyond OpenAI, which is required fo
 | `GMAIL_SMTP_HOST` | SMTP server hostname (default: `smtp.gmail.com`) |
 | `GMAIL_SMTP_PORT` | SMTP server port (default: `587` for STARTTLS) |
 | `COACH_TIMEZONE` | Timezone for schedule calculations (default: `America/New_York`) |
+| `ANTHROPIC_API_KEY` | Anthropic API key (optional -- only needed when Claude is the selected AI provider for response generation) |
 | `DASHBOARD_PASSWORD` | Password required to access the Streamlit admin dashboard |
 
 These variables are stored as GitHub repository secrets for workflow execution and as Streamlit secrets for dashboard operation. The `config.py` module abstracts over both sources, checking environment variables first and falling back to Streamlit secrets, so the same code runs in both contexts without modification.
@@ -521,7 +651,8 @@ coaching-system/
 │       ├── 5_corrections.py         # Human correction corpus manager
 │       ├── 6_settings.py            # System-wide configuration
 │       ├── 7_run_workflows.py       # Health checks, manual triggers, fine-tuning export
-│       └── 8_analytics.py           # Metrics, charts, calibration analysis
+│       ├── 8_analytics.py           # Metrics, charts, calibration analysis
+│       └── 9_knowledge_base.py     # Knowledge base browser, upload, delete
 │
 ├── db/
 │   ├── supabase_client.py           # Singleton database access layer
@@ -529,14 +660,26 @@ coaching-system/
 │   ├── setup.sql                    # Initial schema DDL (tables, RLS, indexes)
 │   ├── migration_v2.sql             # Feature enhancement migrations
 │   │                                # (satisfaction, onboarding, analytics fields)
+│   ├── migration_v3.sql             # Per-email send offsets, multi-provider settings
+│   ├── migration_v4.sql             # Evaluation sub-scores, bounce detection
+│   ├── migration_v5.sql             # Knowledge base (pgvector, knowledge_chunks table,
+│   │                                # IVFFlat index, match_knowledge_chunks RPC)
 │   └── seed_model_responses.sql     # Example ideal responses by stage
 │
 ├── services/
+│   ├── ai_service.py               # AI provider router
+│   │                                # Dispatches generation to OpenAI or Anthropic
+│   ├── anthropic_service.py         # Anthropic Claude API service
+│   │                                # Response generation, check-in generation
 │   ├── coaching_service.py          # Core business logic orchestrator
 │   │                                # Context building, pipeline coordination
+│   ├── embedding_service.py         # OpenAI embeddings wrapper
+│   │                                # text-embedding-3-small (1536 dimensions)
 │   ├── gmail_service.py             # Email send/receive abstraction
 │   │                                # IMAP fetch, SMTP send, threading, parsing
-│   └── openai_service.py            # AI model interaction layer
+│   ├── knowledge_service.py         # RAG retrieval and prompt formatting
+│   │                                # pgvector similarity search, context injection
+│   └── openai_service.py            # OpenAI API interaction layer
 │                                    # Generation, evaluation, RAG, retries
 │
 ├── workflows/
@@ -564,8 +707,10 @@ coaching-system/
 │
 ├── scripts/
 │   ├── setup_supabase.py            # Supabase setup helper
-│   └── export_finetune_data.py      # Fine-tuning dataset exporter
-│                                    # Converts corrections to OpenAI JSONL format
+│   ├── export_finetune_data.py      # Fine-tuning dataset exporter
+│   │                                # Converts corrections to OpenAI JSONL format
+│   └── ingest_knowledge_base.py     # Knowledge base ingestion pipeline
+│                                    # PDF extraction, chunking, tagging, embedding
 │
 ├── tests/
 │   ├── conftest.py                  # Shared test fixtures and service mocks
@@ -574,8 +719,12 @@ coaching-system/
 │   ├── test_proactive_outreach.py   # Check-in and re-engagement tests
 │   ├── test_send_approved.py        # Outbound pipeline tests
 │   ├── test_edge_cases.py           # Boundary conditions and error handling
-│   └── test_new_features.py         # Onboarding, thread cap, satisfaction,
-│                                    # stage changes, personalized scheduling
+│   ├── test_new_features.py         # Onboarding, thread cap, satisfaction,
+│   │                                # stage changes, personalized scheduling
+│   ├── test_knowledge_base.py       # Knowledge base ingestion, retrieval,
+│   │                                # embedding, chunk metadata, deletion
+│   └── test_ai_service.py           # AI service routing, provider dispatch,
+│                                    # fallback behavior, context injection
 │
 └── .github/workflows/
     ├── process_emails.yml           # Hourly email processing (8am-9pm ET)
@@ -589,7 +738,7 @@ coaching-system/
 
 ## Test Suite
 
-The system includes a comprehensive test suite with **78 tests across 6 test files**. All external services (OpenAI, Gmail, Supabase) are fully mocked, ensuring tests run fast, deterministically, and without any network dependencies or API costs.
+The system includes a comprehensive test suite with **134 tests across 8 test files**. All external services (OpenAI, Anthropic, Gmail, Supabase) are fully mocked, ensuring tests run fast, deterministically, and without any network dependencies or API costs.
 
 ### Test Coverage Areas
 
@@ -601,6 +750,8 @@ The system includes a comprehensive test suite with **78 tests across 6 test fil
 | `test_send_approved.py` | Outbound pipeline | Batch sending, sign-off appending, threading header construction, delay timing, summary generation, status updates |
 | `test_edge_cases.py` | Error handling and boundaries | Empty messages, malformed emails, API failures, retry exhaustion, missing user data, thread cap enforcement, duplicate processing |
 | `test_new_features.py` | Recent additions | Onboarding sequence flow (all 3 steps), thread reply cap behavior, satisfaction score rolling average calculation, stage change detection and recording, personalized check-in day scheduling |
+| `test_knowledge_base.py` | Knowledge base | Ingestion pipeline (PDF extraction, chunking, tagging, embedding), pgvector similarity retrieval, chunk metadata validation, source deletion cascading, embedding dimension verification |
+| `test_ai_service.py` | AI service routing | Provider dispatch (OpenAI vs Anthropic), settings-based routing, knowledge context injection for Claude, fallback when provider unavailable, consistent evaluation regardless of provider |
 
 ### Test Infrastructure
 

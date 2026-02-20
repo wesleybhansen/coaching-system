@@ -270,6 +270,108 @@ Ask yourself:
 
 ---
 
+## Test 11: Knowledge Base Page
+
+**What you're testing:** Does the Knowledge Base dashboard page display your ingested content correctly, and can you browse and manage it?
+
+### As the admin:
+1. Open the dashboard and click **Knowledge Base** in the sidebar (page 9)
+2. Look at the stats bar at the top — it should show the number of sources, total chunks, and total words
+
+### What to look for:
+- [ ] The page loads without errors
+- [ ] The source count is around 47 (4 books + 1 syllabus + 42 lecture transcripts — your exact number may vary slightly)
+- [ ] Total chunks and total words both show reasonable numbers (not zero, not obviously wrong)
+
+### Browse a book source:
+3. Find one of the books in the source list — try **The Launch System**
+4. Click to expand it and browse through the chunks
+
+### What to look for:
+- [ ] Each chunk has a title that makes sense (chapter name, section heading, etc.)
+- [ ] Each chunk has a summary — a short plain-language description of what that chunk covers
+- [ ] Each chunk has stage tags (like "Ideation", "Validation", etc.) that match the content
+- [ ] Each chunk has topic tags that feel accurate
+- [ ] Word counts are shown and look reasonable (not all identical, not wildly huge)
+
+### Browse a lecture source:
+5. Find one of the lecture transcripts in the source list (e.g., a lecture on customer discovery or pricing)
+6. Expand it and look through the chunks
+
+### What to look for:
+- [ ] The chunks are broken up in a way that makes sense (not mid-sentence, not one giant chunk)
+- [ ] Tags and summaries are present and relevant to the lecture topic
+
+### Preview full chunk content:
+7. Click to preview the full content of a few chunks (one from a book, one from a lecture)
+
+### What to look for:
+- [ ] The content is actual readable text from your books/lectures — not garbled, not truncated in a weird spot
+- [ ] It matches what you'd expect from that chapter or lecture topic
+
+### (Optional) Test uploading a new file:
+8. Create a small test file — a plain .txt file with a few paragraphs of text (anything works)
+9. Upload it using the upload feature on the Knowledge Base page
+10. Wait for it to process (chunking, tagging, embedding)
+
+### What to look for:
+- [ ] The upload completes without errors
+- [ ] The new source appears in the source list
+- [ ] The chunks have titles, summaries, and tags (auto-generated)
+- [ ] The source count increased by one
+
+### (Optional) Clean up the test upload:
+11. Find the test file you just uploaded in the source list
+12. Delete all chunks for that source
+
+### What to look for:
+- [ ] The delete confirmation works
+- [ ] The source disappears from the list
+- [ ] The stats update to reflect the removal
+
+---
+
+## Test 12: Claude Knowledge Base Responses
+
+**What you're testing:** When Claude is selected as the AI provider, does it generate coaching responses that are grounded in your actual books and lectures?
+
+### As the admin:
+1. Go to the **Settings** page
+2. Find the **AI Provider** setting
+3. Change it to **Anthropic (Claude)**
+4. Save the setting
+5. Verify the setting persisted (refresh the page and confirm it still shows Claude)
+
+### As the user:
+6. From your personal email, send a coaching message that would naturally reference specific teaching material. Try something like:
+
+> I've validated that freelancers hate job boards, but now I'm stuck on pricing. I have no idea how to figure out what to charge. Should I just look at what competitors charge and go lower?
+
+(This should prompt a response that draws on your pricing and monetization content.)
+
+### As the admin:
+7. Go to **Run Workflows** → click **Process Emails**
+8. Go to **Pending Review**
+
+### What to look for:
+- [ ] The AI generated a response (no errors in processing)
+- [ ] The response references specific concepts from your books or lectures — look for mentions of book titles, frameworks, or ideas that come directly from your material
+- [ ] The response feels grounded in real teaching content, not generic startup advice you'd find anywhere online
+- [ ] The coaching tone still sounds like you (direct, focused, ends with a question)
+- [ ] The response length is reasonable (1-3 paragraphs, not an essay)
+- [ ] The confidence score is present and seems reasonable
+
+### (Optional) Compare with OpenAI:
+9. If you want to see the difference, switch the AI Provider back to **OpenAI (GPT-4o)** on the Settings page
+10. Send another similar email from your personal account and process it
+11. Compare the two responses side by side — both should reference your content, but the style may differ slightly
+
+### When you're done:
+12. Go to **Settings** and set the AI Provider to whichever one you prefer going forward
+13. Save the setting
+
+---
+
 ## After Testing: What to Write Down
 
 Keep a running list as you go. For each issue, note:
