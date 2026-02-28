@@ -134,7 +134,7 @@ for conv in conversations:
                 yes_col, no_col = st.columns(2)
                 with yes_col:
                     if st.button("Yes", key=f"flagged_delete_yes_{conv['id']}", type="primary"):
-                        db.delete_conversation(conv["id"])
+                        db.get_client().table("conversations").delete().eq("id", conv["id"]).execute()
                         st.session_state[confirm_key] = False
                         st.success("Deleted")
                         st.rerun()

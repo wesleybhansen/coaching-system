@@ -155,7 +155,7 @@ for user in users:
             yes_col, no_col = st.columns(2)
             with yes_col:
                 if st.button("Yes, delete", key=f"delete_user_yes_{user['id']}", type="primary"):
-                    db.delete_user(user["id"])
+                    db.get_client().table("users").delete().eq("id", user["id"]).execute()
                     st.session_state[delete_confirm_key] = False
                     st.success("User deleted")
                     st.rerun()
