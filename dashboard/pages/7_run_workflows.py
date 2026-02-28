@@ -97,7 +97,9 @@ with col2:
     if st.button("✉️ Send Approved", use_container_width=True, help="Send all approved responses"):
         with st.spinner("Sending approved responses..."):
             try:
+                import importlib
                 from workflows import send_approved
+                importlib.reload(send_approved)
                 send_approved.run(immediate=True)
                 st.success("Approved responses sent!")
                 st.rerun()
