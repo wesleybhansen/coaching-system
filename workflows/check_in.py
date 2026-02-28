@@ -54,6 +54,7 @@ def run():
                     "type": "Check-in",
                     "status": "Pending Review",
                     "ai_response": checkin_body,
+                    "confidence": 9,
                 })
 
                 sent += 1

@@ -24,21 +24,30 @@ if status_filter != "All":
 
 st.write(f"Showing {len(users)} user(s)")
 
-# Add new user
-with st.expander("Add new user"):
+# Show success banner from previous add (outside the form so it's visible after rerun)
+if st.session_state.get("user_added"):
+    st.success(st.session_state["user_added"])
+    del st.session_state["user_added"]
+
+# Add new user — distinct section with a subheader and container
+st.subheader("Add New User")
+with st.container(border=True):
     with st.form("add_user"):
-        new_email = st.text_input("Email")
-        new_name = st.text_input("First name")
-        new_stage = st.selectbox("Stage", ["Ideation", "Early Validation", "Late Validation", "Growth"])
-        new_idea = st.text_area("Business idea", height=80)
-        new_checkin_days = st.multiselect(
-            "Check-in days (max 3, leave empty for system default)",
-            options=DAY_OPTIONS,
-            default=[],
-            max_selections=3,
-            key="new_user_checkin_days",
-        )
-        submitted = st.form_submit_button("Add User")
+        form_col1, form_col2 = st.columns(2)
+        with form_col1:
+            new_email = st.text_input("Email")
+            new_name = st.text_input("First name")
+            new_stage = st.selectbox("Stage", ["Ideation", "Early Validation", "Late Validation", "Growth"])
+        with form_col2:
+            new_idea = st.text_area("Business idea", height=80)
+            new_checkin_days = st.multiselect(
+                "Check-in days (max 3, leave empty for system default)",
+                options=DAY_OPTIONS,
+                default=[],
+                max_selections=3,
+                key="new_user_checkin_days",
+            )
+        submitted = st.form_submit_button("Add User", type="primary")
 
         if submitted and new_email:
             existing = db.get_user_by_email(new_email)
@@ -64,11 +73,14 @@ with st.expander("Add new user"):
                         "type": "Onboarding",
                         "status": "Pending Review",
                         "ai_response": onboarding_body,
+                        "confidence": 9,
                     })
-                st.success(f"User {new_email} added! Onboarding email is in Pending Review.")
+                st.session_state["user_added"] = f"User {new_email} added! Onboarding email is in Pending Review."
                 st.rerun()
 
 # User list
+st.divider()
+st.subheader("User List")
 for user in users:
     status_icon = {"Active": "\U0001f7e2", "Paused": "\U0001f7e1", "Silent": "\U0001f534", "Onboarding": "\U0001f535"}.get(
         user.get("status", ""), "\u26aa")

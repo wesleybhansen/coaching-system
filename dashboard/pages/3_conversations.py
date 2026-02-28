@@ -85,3 +85,26 @@ for conv in conversations:
             st.write(f"**Sent at:** {conv['sent_at'][:19].replace('T', ' ')}")
         if conv.get("resource_referenced"):
             st.write(f"**Resource referenced:** {conv['resource_referenced']}")
+
+        # Delete conversation
+        confirm_key = f"conv_delete_confirm_{conv['id']}"
+        if confirm_key not in st.session_state:
+            st.session_state[confirm_key] = False
+
+        if not st.session_state[confirm_key]:
+            if st.button("Delete", key=f"conv_delete_{conv['id']}"):
+                st.session_state[confirm_key] = True
+                st.rerun()
+        else:
+            st.warning("Are you sure? This cannot be undone.")
+            yes_col, no_col = st.columns(2)
+            with yes_col:
+                if st.button("Yes, delete", key=f"conv_delete_yes_{conv['id']}", type="primary"):
+                    db.get_client().table("conversations").delete().eq("id", conv["id"]).execute()
+                    st.session_state[confirm_key] = False
+                    st.success("Deleted")
+                    st.rerun()
+            with no_col:
+                if st.button("Cancel", key=f"conv_delete_cancel_{conv['id']}"):
+                    st.session_state[confirm_key] = False
+                    st.rerun()
