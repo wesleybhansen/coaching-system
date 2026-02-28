@@ -14,21 +14,15 @@ from db import supabase_client as db
 class TestOnboardingFlow:
     """Test the multi-step onboarding in coaching_service.process_email."""
 
-    def test_new_user_creates_onboarding_conversation(self, mock_db, mock_openai, mock_gmail):
-        """New user email creates Onboarding conversation with status Pending Review."""
+    def test_unknown_sender_is_ignored(self, mock_db, mock_openai, mock_gmail):
+        """Invite-only: unknown sender email is ignored, no user or conversation created."""
         email = make_email(from_email="newbie@example.com", from_name="Newbie Jones")
 
-        coaching_service.process_email(email)
+        result = coaching_service.process_email(email)
 
-        # User was created
-        assert len(mock_db["users"]) == 1
-        assert mock_db["users"][0]["email"] == "newbie@example.com"
-
-        # Onboarding conversation created in Pending Review
-        assert len(mock_db["conversations"]) == 1
-        conv = mock_db["conversations"][0]
-        assert conv["type"] == "Onboarding"
-        assert conv["status"] == "Pending Review"
+        assert result is None
+        assert len(mock_db["users"]) == 0
+        assert len(mock_db["conversations"]) == 0
 
     def test_onboarding_step1_reply_asks_for_challenge(self, mock_db, mock_openai, mock_gmail):
         """User with onboarding_step=1 gets step 2 response asking for their challenge."""

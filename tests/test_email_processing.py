@@ -7,38 +7,18 @@ from tests.conftest import make_user, make_email, make_conversation
 from services import coaching_service
 
 
-class TestNewUserOnboarding:
-    """When an email arrives from an unknown address, system should create
-    a new user and draft an onboarding message in Pending Review."""
+class TestUnknownSenderIgnored:
+    """Invite-only model: emails from unknown addresses are ignored.
+    Users must be added via the dashboard first."""
 
-    def test_creates_user_and_onboarding_conversation(self, mock_db, mock_openai, mock_gmail):
+    def test_unknown_sender_is_skipped(self, mock_db, mock_openai, mock_gmail):
         email = make_email(from_email="newperson@example.com", from_name="New Person")
 
-        coaching_service.process_email(email)
+        result = coaching_service.process_email(email)
 
-        # User was created
-        assert len(mock_db["users"]) == 1
-        assert mock_db["users"][0]["email"] == "newperson@example.com"
-
-        # Onboarding conversation created in Pending Review
-        assert len(mock_db["conversations"]) == 1
-        conv = mock_db["conversations"][0]
-        assert conv["type"] == "Onboarding"
-        assert conv["status"] == "Pending Review"
-
-    def test_new_user_first_name_extracted(self, mock_db, mock_openai, mock_gmail):
-        email = make_email(from_email="jane@example.com", from_name="Jane Doe")
-
-        coaching_service.process_email(email)
-
-        assert mock_db["users"][0]["first_name"] == "Jane"
-
-    def test_new_user_no_name_defaults_to_there(self, mock_db, mock_openai, mock_gmail):
-        email = make_email(from_email="anon@example.com", from_name="")
-
-        coaching_service.process_email(email)
-
-        assert mock_db["users"][0]["first_name"] == "there"
+        assert result is None
+        assert len(mock_db["users"]) == 0
+        assert len(mock_db["conversations"]) == 0
 
 
 class TestKnownUserNormalMessage:

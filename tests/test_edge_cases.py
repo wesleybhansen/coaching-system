@@ -157,6 +157,9 @@ class TestProcessEmailWorkflow:
         """If one email fails to process, the workflow should continue."""
         from workflows import process_emails
 
+        # Add a known user so the second email gets processed
+        mock_db["users"].append(make_user(email="good@example.com"))
+
         # First email will fail, second should succeed
         emails = [
             make_email(from_email="bad@example.com", imap_id="1"),
@@ -183,7 +186,7 @@ class TestProcessEmailWorkflow:
         finally:
             cs.process_email = original_fn
 
-        # Second email should have been processed (new user created)
+        # Second email should have been processed (known user)
         assert any(u["email"] == "good@example.com" for u in mock_db["users"])
         # First email should NOT be marked as read (so cleanup can catch it)
         # Second email SHOULD be marked as read

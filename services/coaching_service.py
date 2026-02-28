@@ -268,29 +268,12 @@ def process_email(email_data: dict) -> dict | None:
         logger.info(f"Ignoring system address: {from_email}")
         return None
 
-    # Find or create user
+    # Find user — invite-only model, no auto-creation
     user = db.get_user_by_email(from_email)
     if not user:
-        # Auto-create user and draft onboarding for review
-        first_name = email_data.get("from_name", "").split()[0] if email_data.get("from_name") else "there"
-        user = db.create_user(from_email, first_name)
-        db.update_user(user["id"], {"onboarding_step": 1})
-        logger.info(f"New user created: {from_email}")
-
-        onboarding_body = gmail_service.get_onboarding_body(first_name)
-
-        # Create conversation as Pending Review so Wes can approve it first
-        db.create_conversation({
-            "user_id": user["id"],
-            "type": "Onboarding",
-            "user_message_raw": raw_body,
-            "user_message_parsed": raw_body,
-            "ai_response": onboarding_body,
-            "confidence": 8,
-            "gmail_message_id": message_id or None,
-            "status": "Pending Review",
-        })
-        logger.info(f"Onboarding draft created for {from_email} — awaiting review")
+        # Ignore emails from unknown senders.
+        # The cleanup workflow will flag these after 24h as a safety net.
+        logger.info(f"Ignoring email from unknown sender: {from_email}")
         return None
 
     # Handle multi-step onboarding
