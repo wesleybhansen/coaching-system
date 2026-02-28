@@ -107,6 +107,18 @@ if new_max_days != max_days_val:
     db.set_setting("max_checkin_days_per_week", str(new_max_days))
     st.success("Max check-in days per week updated")
 
+min_days_val = int(settings.get("checkin_min_days_since_response", "3"))
+new_min_days = st.number_input(
+    "Minimum days since last response before sending a check-in",
+    min_value=1,
+    max_value=14,
+    value=min_days_val,
+    help="Users who responded within this many days will be skipped by the check-in workflow.",
+)
+if new_min_days != min_days_val:
+    db.set_setting("checkin_min_days_since_response", str(new_min_days))
+    st.success("Minimum days since response updated")
+
 st.caption("Individual users can override the default check-in days from the Users page.")
 
 # ── Thread Cap ────────────────────────────────────────────

@@ -70,6 +70,16 @@ st.divider()
 st.subheader("Manual Triggers")
 st.markdown("Run any workflow on-demand. Results appear in the run history below.")
 
+st.info(
+    "**How sending works:**\n\n"
+    "- **Send Approved** runs automatically at scheduled times (9am, 1pm, 7pm ET). "
+    "Clicking the button below sends immediately without waiting.\n"
+    "- **Check In** generates check-in messages that go to **Pending Review** first — "
+    "they are NOT sent directly to users.\n"
+    "- After approving check-ins on the Pending Review page, they wait for the next "
+    "Send Approved run, or click Send Approved to send them right away."
+)
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -88,7 +98,7 @@ with col2:
         with st.spinner("Sending approved responses..."):
             try:
                 from workflows import send_approved
-                send_approved.run()
+                send_approved.run(immediate=True)
                 st.success("Approved responses sent!")
                 st.rerun()
             except Exception as e:

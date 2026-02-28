@@ -215,25 +215,21 @@ def send_checkin(to_email: str, first_name: str, in_reply_to: str = None,
     """Send a check-in email."""
     body = f"""Hey {first_name},
 
-Quick check-in. Reply with:
+Just wanted to quickly check-in and see how things are going. Please reply with:
 
 1. Accomplished - What did you get done since we last talked?
 2. Current Focus - What are you working on now?
 3. Next Step - What's the single most important thing you need to do next?
 4. Approach - How are you going about it?
 
-Keep it brief - a sentence or two for each.
+There's no need to spend a ton of time on this. A sentence or two for each is plenty.
 
 Wes"""
 
-    subject = "Re: Coaching" if in_reply_to else "Quick check-in"
-
     return send_email(
         to_email=to_email,
-        subject=subject,
+        subject="Coaching Check-In",
         body=body,
-        in_reply_to=in_reply_to,
-        references=references,
     )
 
 

@@ -6,19 +6,19 @@ All email templates used by the coaching system.
 
 ## Check-in Email (Standardized)
 
-**Subject:** Quick check-in
+**Subject:** Coaching Check-In
 
 ```
 Hey {first_name},
 
-Quick check-in. Reply with:
+Just wanted to quickly check-in and see how things are going. Please reply with:
 
 1. **Accomplished** - What did you get done since we last talked?
 2. **Current Focus** - What are you working on now?
 3. **Next Step** - What's the single most important thing you need to do next?
 4. **Approach** - How are you going about it?
 
-Keep it brief - a sentence or two for each.
+There's no need to spend a ton of time on this. A sentence or two for each is plenty.
 
 Wes
 ```
@@ -26,7 +26,7 @@ Wes
 **Notes:**
 - Same template for all stages
 - Structured format makes parsing easier
-- Brief responses encouraged to keep exchanges quick
+- Starts a fresh Gmail thread (not threaded under "Re: Coaching")
 
 ---
 

@@ -77,7 +77,7 @@ for conv in conversations:
             st.write(f"**Summary:** {user.get('summary', 'No summary yet')}")
 
         # Actions
-        btn_col1, btn_col2, btn_col3 = st.columns(3)
+        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
 
         with btn_col1:
             if st.button("Approve", key=f"flagged_approve_{conv['id']}", type="primary"):
@@ -119,3 +119,26 @@ for conv in conversations:
                 })
                 st.info("Moved to Pending Review")
                 st.rerun()
+
+        with btn_col4:
+            confirm_key = f"flagged_delete_confirm_{conv['id']}"
+            if confirm_key not in st.session_state:
+                st.session_state[confirm_key] = False
+
+            if not st.session_state[confirm_key]:
+                if st.button("Delete", key=f"flagged_delete_{conv['id']}"):
+                    st.session_state[confirm_key] = True
+                    st.rerun()
+            else:
+                st.warning("Are you sure?")
+                yes_col, no_col = st.columns(2)
+                with yes_col:
+                    if st.button("Yes", key=f"flagged_delete_yes_{conv['id']}", type="primary"):
+                        db.delete_conversation(conv["id"])
+                        st.session_state[confirm_key] = False
+                        st.success("Deleted")
+                        st.rerun()
+                with no_col:
+                    if st.button("Cancel", key=f"flagged_delete_cancel_{conv['id']}"):
+                        st.session_state[confirm_key] = False
+                        st.rerun()

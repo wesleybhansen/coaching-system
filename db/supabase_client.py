@@ -51,6 +51,7 @@ def get_active_users_for_checkin_today(day_of_week: str):
     """
     default_days_str = get_setting("default_checkin_days", "tue,fri")
     default_days = [d.strip().lower() for d in default_days_str.split(",")]
+    min_days = int(get_setting("checkin_min_days_since_response", "3"))
 
     resp = get_client().table("users").select("*").eq("status", "Active").execute()
     users = []
@@ -62,14 +63,14 @@ def get_active_users_for_checkin_today(day_of_week: str):
             user_days = default_days
 
         if day_of_week in user_days:
-            # Also check they haven't been contacted too recently (at least 1 day gap)
+            # Check they haven't been contacted too recently
             last = u.get("last_response_date")
             if last is None:
                 users.append(u)
             else:
                 last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
                 diff = (datetime.now(timezone.utc) - last_dt).days
-                if diff >= 1:
+                if diff >= min_days:
                     users.append(u)
     return users
 
@@ -105,6 +106,11 @@ def create_user(email: str, first_name: str = None):
 def update_user(user_id: str, updates: dict):
     resp = get_client().table("users").update(updates).eq("id", user_id).execute()
     return resp.data[0] if resp.data else None
+
+
+def delete_user(user_id: str):
+    """Delete a user by ID. ON DELETE CASCADE removes their conversations automatically."""
+    get_client().table("users").delete().eq("id", user_id).execute()
 
 
 def get_all_users():
@@ -184,6 +190,11 @@ def conversation_exists_for_message(gmail_message_id: str) -> bool:
             .limit(1)
             .execute())
     return len(resp.data) > 0
+
+
+def delete_conversation(conversation_id: str):
+    """Delete a conversation by ID."""
+    get_client().table("conversations").delete().eq("id", conversation_id).execute()
 
 
 def get_all_conversations(limit: int = 100):

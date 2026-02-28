@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import streamlit as st
 
 from db import supabase_client as db
+from services import gmail_service
 
 st.set_page_config(page_title="Users", layout="wide")
 st.title("Users")
@@ -51,10 +52,20 @@ with st.expander("Add new user"):
                     db.update_user(user["id"], {
                         "stage": new_stage,
                         "business_idea": new_idea if new_idea else None,
-                        "status": "Active",
+                        "status": "Onboarding",
+                        "onboarding_step": 1,
                         "checkin_days": checkin_days_value,
                     })
-                st.success(f"User {new_email} added!")
+                    # Create onboarding email in Pending Review
+                    first = new_name or "there"
+                    onboarding_body = gmail_service.get_onboarding_body(first)
+                    db.create_conversation({
+                        "user_id": user["id"],
+                        "type": "Onboarding",
+                        "status": "Pending Review",
+                        "ai_response": onboarding_body,
+                    })
+                st.success(f"User {new_email} added! Onboarding email is in Pending Review.")
                 st.rerun()
 
 # User list
@@ -127,3 +138,28 @@ for user in users:
         st.write(f"**Onboarding step:** {user.get('onboarding_step') if user.get('onboarding_step') is not None else 'N/A'}")
         st.write(f"**Last response:** {(user.get('last_response_date') or 'Never')[:19]}")
         st.write(f"**Joined:** {(user.get('created_at') or '')[:10]}")
+
+        # Delete user
+        st.divider()
+        delete_confirm_key = f"delete_user_confirm_{user['id']}"
+        if delete_confirm_key not in st.session_state:
+            st.session_state[delete_confirm_key] = False
+
+        if not st.session_state[delete_confirm_key]:
+            if st.button("Delete User", key=f"delete_user_{user['id']}"):
+                st.session_state[delete_confirm_key] = True
+                st.rerun()
+        else:
+            user_label = f"{user.get('first_name', '')} ({user['email']})"
+            st.error(f"Delete **{user_label}** and ALL their conversations? This cannot be undone.")
+            yes_col, no_col = st.columns(2)
+            with yes_col:
+                if st.button("Yes, delete", key=f"delete_user_yes_{user['id']}", type="primary"):
+                    db.delete_user(user["id"])
+                    st.session_state[delete_confirm_key] = False
+                    st.success("User deleted")
+                    st.rerun()
+            with no_col:
+                if st.button("Cancel", key=f"delete_user_cancel_{user['id']}"):
+                    st.session_state[delete_confirm_key] = False
+                    st.rerun()

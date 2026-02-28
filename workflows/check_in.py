@@ -40,6 +40,11 @@ def run():
                 first_name = user.get("first_name") or "there"
                 email_addr = user["email"]
 
+                # Skip users who already have pending outreach
+                if db.has_pending_outreach(user["id"]):
+                    logger.info(f"Skipping check-in for {email_addr}: has pending outreach")
+                    continue
+
                 # Generate personalized check-in question based on user context
                 checkin_body = _generate_checkin_body(user, first_name)
 
@@ -104,11 +109,11 @@ def _standard_checkin_body(first_name: str) -> str:
     """Fallback standard check-in template."""
     return f"""Hey {first_name},
 
-Quick check-in. Reply with:
+Just wanted to quickly check-in and see how things are going. Please reply with:
 
 1. Accomplished - What did you get done since we last talked?
 2. Current Focus - What are you working on now?
 3. Next Step - What's the single most important thing you need to do next?
 4. Approach - How are you going about it?
 
-Keep it brief - a sentence or two for each."""
+There's no need to spend a ton of time on this. A sentence or two for each is plenty."""

@@ -12,12 +12,15 @@ from services import gmail_service, openai_service
 logger = logging.getLogger(__name__)
 
 
-def run():
+def run(immediate=False):
     """Send all approved, unsent responses.
 
     Each email gets a random offset of 1-N minutes (default N=100) so
     responses land at varied, human-feeling times rather than in a cluster.
     Emails are sorted by offset and sent with incremental gaps between them.
+
+    Args:
+        immediate: If True, skip all sleep delays (used by dashboard manual trigger).
     """
     run_id = db.start_workflow_run("send_approved")
     sent = 0
@@ -57,28 +60,41 @@ def run():
                 full_response = f"{response_text}\n\nWes"
 
                 # Sleep the incremental gap from previous email's offset
-                gap_minutes = conv["_send_offset"] - prev_offset
-                gap_seconds = gap_minutes * 60
-                logger.info(f"Sending to {user['email']} (offset {conv['_send_offset']}m, sleeping {gap_seconds}s)")
-                time.sleep(gap_seconds)
-                prev_offset = conv["_send_offset"]
+                if not immediate:
+                    gap_minutes = conv["_send_offset"] - prev_offset
+                    gap_seconds = gap_minutes * 60
+                    logger.info(f"Sending to {user['email']} (offset {conv['_send_offset']}m, sleeping {gap_seconds}s)")
+                    time.sleep(gap_seconds)
+                    prev_offset = conv["_send_offset"]
+                else:
+                    logger.info(f"Sending to {user['email']} (immediate mode, no delay)")
 
-                # Threading with resilience: try user's gmail_message_id first,
-                # fall back to finding the most recent conversation's message_id
-                in_reply_to = user.get("gmail_message_id")
-                references = user.get("gmail_message_id")
+                # Determine subject and threading based on conversation type
+                is_checkin = conv.get("type") == "Check-in"
 
-                if not in_reply_to:
-                    # Fallback: try to find thread from recent conversations
-                    recent = db.get_recent_conversations(user["id"], limit=1)
-                    if recent and recent[0].get("gmail_message_id"):
-                        in_reply_to = recent[0]["gmail_message_id"]
-                        references = in_reply_to
-                        logger.info(f"Using fallback threading for {user['email']}")
+                if is_checkin:
+                    # Check-ins start a fresh thread
+                    subject = "Coaching Check-In"
+                    in_reply_to = None
+                    references = None
+                else:
+                    # Threading with resilience: try user's gmail_message_id first,
+                    # fall back to finding the most recent conversation's message_id
+                    subject = "Re: Coaching"
+                    in_reply_to = user.get("gmail_message_id")
+                    references = user.get("gmail_message_id")
+
+                    if not in_reply_to:
+                        # Fallback: try to find thread from recent conversations
+                        recent = db.get_recent_conversations(user["id"], limit=1)
+                        if recent and recent[0].get("gmail_message_id"):
+                            in_reply_to = recent[0]["gmail_message_id"]
+                            references = in_reply_to
+                            logger.info(f"Using fallback threading for {user['email']}")
 
                 sent_msg_id = gmail_service.send_email(
                     to_email=user["email"],
-                    subject="Re: Coaching",
+                    subject=subject,
                     body=full_response,
                     in_reply_to=in_reply_to,
                     references=references,

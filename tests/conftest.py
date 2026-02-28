@@ -192,6 +192,10 @@ def mock_db(monkeypatch):
                 return u
         return None
 
+    def delete_user(user_id):
+        storage["users"] = [u for u in storage["users"] if u["id"] != user_id]
+        storage["conversations"] = [c for c in storage["conversations"] if c.get("user_id") != user_id]
+
     def create_conversation(data):
         data.setdefault("id", str(uuid.uuid4()))
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -204,6 +208,9 @@ def mock_db(monkeypatch):
                 c.update(updates)
                 return c
         return None
+
+    def delete_conversation(conv_id):
+        storage["conversations"] = [c for c in storage["conversations"] if c["id"] != conv_id]
 
     def conversation_exists_for_message(gmail_message_id):
         return any(
@@ -287,6 +294,7 @@ def mock_db(monkeypatch):
     def get_active_users_for_checkin_today(day_of_week):
         default_days_str = storage["settings"].get("default_checkin_days", "tue,fri")
         default_days = [d.strip().lower() for d in default_days_str.split(",")]
+        min_days = int(storage["settings"].get("checkin_min_days_since_response", "3"))
 
         users = []
         for u in storage["users"]:
@@ -300,13 +308,13 @@ def mock_db(monkeypatch):
                 user_days = default_days
 
             if day_of_week in user_days:
-                # Also check at least 1 day since last_response_date
+                # Check they haven't been contacted too recently
                 last = u.get("last_response_date")
                 if last is None:
                     users.append(u)
                 else:
                     last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
-                    if (datetime.now(timezone.utc) - last_dt).days >= 1:
+                    if (datetime.now(timezone.utc) - last_dt).days >= min_days:
                         users.append(u)
         return users
 
@@ -444,8 +452,10 @@ def mock_db(monkeypatch):
     monkeypatch.setattr(db_mod, "get_user_by_id", get_user_by_id)
     monkeypatch.setattr(db_mod, "create_user", create_user)
     monkeypatch.setattr(db_mod, "update_user", update_user)
+    monkeypatch.setattr(db_mod, "delete_user", delete_user)
     monkeypatch.setattr(db_mod, "create_conversation", create_conversation)
     monkeypatch.setattr(db_mod, "update_conversation", update_conversation)
+    monkeypatch.setattr(db_mod, "delete_conversation", delete_conversation)
     monkeypatch.setattr(db_mod, "conversation_exists_for_message", conversation_exists_for_message)
     monkeypatch.setattr(db_mod, "get_recent_conversations", get_recent_conversations)
     monkeypatch.setattr(db_mod, "get_conversations_for_user", get_conversations_for_user)

@@ -260,7 +260,7 @@ class TestPersonalizedCheckin:
             email="scheduled@example.com",
             status="Active",
             checkin_days="mon,wed",
-            last_response_date=(datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+            last_response_date=(datetime.now(timezone.utc) - timedelta(days=4)).isoformat(),
         )
         mock_db["users"].append(user)
 
@@ -274,7 +274,7 @@ class TestPersonalizedCheckin:
             email="scheduled@example.com",
             status="Active",
             checkin_days="mon,wed",
-            last_response_date=(datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+            last_response_date=(datetime.now(timezone.utc) - timedelta(days=4)).isoformat(),
         )
         mock_db["users"].append(user)
 
@@ -287,7 +287,7 @@ class TestPersonalizedCheckin:
             email="defaultsched@example.com",
             status="Active",
             checkin_days=None,
-            last_response_date=(datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+            last_response_date=(datetime.now(timezone.utc) - timedelta(days=4)).isoformat(),
         )
         mock_db["users"].append(user)
 
