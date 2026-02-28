@@ -50,8 +50,11 @@ with st.container(border=True):
         submitted = st.form_submit_button("Add User", type="primary")
 
         if submitted and new_email:
-            existing = db.get_user_by_email(new_email)
-            if existing:
+            blocked_prefixes = ("noreply", "no-reply", "no_reply", "support")
+            email_prefix = new_email.split("@")[0].lower()
+            if email_prefix in blocked_prefixes:
+                st.error("System/support email addresses can't be added as users.")
+            elif db.get_user_by_email(new_email):
                 st.error("User with this email already exists.")
             else:
                 db.create_user(new_email, new_name)

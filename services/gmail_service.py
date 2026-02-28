@@ -35,6 +35,7 @@ def _retry(func, *args, **kwargs):
 # Emails from these patterns are ignored (no-reply, system notifications, etc.)
 IGNORED_SENDERS = [
     "noreply", "no-reply", "no_reply",
+    "support@",
     "mailer-daemon", "postmaster",
     "notifications", "notify",
     "calendar-notification",

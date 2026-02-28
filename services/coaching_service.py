@@ -262,6 +262,12 @@ def process_email(email_data: dict) -> dict | None:
         logger.info(f"Already processed message {message_id}, skipping")
         return None
 
+    # Block system/support addresses from becoming users
+    email_prefix = from_email.split("@")[0].lower()
+    if email_prefix in ("noreply", "no-reply", "no_reply", "support"):
+        logger.info(f"Ignoring system address: {from_email}")
+        return None
+
     # Find or create user
     user = db.get_user_by_email(from_email)
     if not user:
