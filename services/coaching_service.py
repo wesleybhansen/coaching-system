@@ -186,7 +186,7 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 {corrected_text}
 
 ## Instructions
-Write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource BY NAME (e.g. "Lecture 7 walks through this" or "The Launch System Phase 2 covers this well"). NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
+Start with "Hey {user.get('first_name', 'there')}," then write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource BY NAME (e.g. "Lecture 7 walks through this" or "The Launch System Phase 2 covers this well"). NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
 
     # Add special context for onboarding challenge responses
     if message_type == "onboarding challenge response":
