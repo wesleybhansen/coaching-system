@@ -238,21 +238,27 @@ def get_onboarding_body(first_name: str) -> str:
     """Return the onboarding email body text without sending."""
     return f"""Hey {first_name},
 
-Welcome to The Launch Pad coaching. Here's how this works:
+Welcome to The Launch Pad coaching. Let me walk you through how this works.
 
-A few times a week, I'll check in with a few quick questions about what you're working on. You reply (should take about 5 minutes), and I'll send back focused guidance, usually within a business day or two.
+A few times a week, I'll check in with a few quick questions about what you're working on. Your replies should only take about 5 minutes. After that, I'll send back focused guidance, usually within a business day or two.
 
 That's it. Short exchanges, consistent momentum.
 
-Before we start, I need some context from you. Reply to this email with:
+Before we dive in, I need a little context from you. Just reply with:
 
 1. Where you're at right now:
-   - Still figuring out the idea (Ideation)
-   - Testing if people want this (Early Validation)
-   - Have some traction, refining the model (Late Validation)
-   - Growing and scaling (Growth)
+
+   - Still figuring out the idea
+
+   - Testing whether people actually want this
+
+   - Have some traction, refining the model
+
+   - Growing and scaling
+
 2. Your biggest challenge or question right now
-3. Your current business idea in 2-3 sentences (if you don't have one yet, that's fine - this is where we'll get started)
+
+3. Your current business idea in 2-3 sentences (if you don't have one yet, that's totally fine. It's where we'll start.)
 
 Don't overthink it. Even a rough answer gets us moving.
 
@@ -264,21 +270,27 @@ def send_onboarding(to_email: str, first_name: str):
     """Send the onboarding email to a new user."""
     body = f"""Hey {first_name},
 
-Welcome to The Launch Pad coaching. Here's how this works:
+Welcome to The Launch Pad coaching. Let me walk you through how this works.
 
-A few times a week, I'll check in with a few quick questions about what you're working on. You reply (should take about 5 minutes), and I'll send back focused guidance, usually within a business day or two.
+A few times a week, I'll check in with a few quick questions about what you're working on. Your replies should only take about 5 minutes. After that, I'll send back focused guidance, usually within a business day or two.
 
 That's it. Short exchanges, consistent momentum.
 
-Before we start, I need some context from you. Reply to this email with:
+Before we dive in, I need a little context from you. Just reply with:
 
 1. Where you're at right now:
-   - Still figuring out the idea (Ideation)
-   - Testing if people want this (Early Validation)
-   - Have some traction, refining the model (Late Validation)
-   - Growing and scaling (Growth)
+
+   - Still figuring out the idea
+
+   - Testing whether people actually want this
+
+   - Have some traction, refining the model
+
+   - Growing and scaling
+
 2. Your biggest challenge or question right now
-3. Your current business idea in 2-3 sentences (if you don't have one yet, that's fine - this is where we'll get started)
+
+3. Your current business idea in 2-3 sentences (if you don't have one yet, that's totally fine. It's where we'll start.)
 
 Don't overthink it. Even a rough answer gets us moving.
 
