@@ -24,8 +24,8 @@ class TestOnboardingFlow:
         assert len(mock_db["users"]) == 0
         assert len(mock_db["conversations"]) == 0
 
-    def test_onboarding_step1_reply_asks_for_challenge(self, mock_db, mock_openai, mock_gmail):
-        """User with onboarding_step=1 gets step 2 response asking for their challenge."""
+    def test_onboarding_reply_activates_user(self, mock_db, mock_openai, mock_gmail):
+        """Any onboarding reply activates the user directly and generates AI response."""
         user = make_user(
             email="onboard@example.com",
             first_name="Onboard",
@@ -36,41 +36,14 @@ class TestOnboardingFlow:
 
         email = make_email(
             from_email="onboard@example.com",
-            body="I'm working on a marketplace for freelancers. I'm in the ideation stage.",
+            body="I'm in ideation. My biggest challenge is finding my first paying customer. I'm working on a marketplace for freelancers.",
         )
 
         coaching_service.process_email(email)
 
-        # Should create a conversation asking for their challenge
-        assert len(mock_db["conversations"]) == 1
-        conv = mock_db["conversations"][0]
-        assert conv["type"] == "Onboarding"
-        assert conv["status"] == "Pending Review"
-        assert "challenge" in conv["ai_response"].lower() or "question" in conv["ai_response"].lower()
-
-        # User onboarding_step should advance to 2
-        assert user["onboarding_step"] == 2
-
-    def test_onboarding_step2_reply_activates_user(self, mock_db, mock_openai, mock_gmail):
-        """User with onboarding_step=2 gets activated and receives AI-generated response."""
-        user = make_user(
-            email="almost@example.com",
-            first_name="Almost",
-            status="Onboarding",
-            onboarding_step=2,
-        )
-        mock_db["users"].append(user)
-
-        email = make_email(
-            from_email="almost@example.com",
-            body="My biggest challenge is finding my first paying customer.",
-        )
-
-        coaching_service.process_email(email)
-
-        # User should now be active with step 3
+        # User should now be active with step 2
         assert user["status"] == "Active"
-        assert user["onboarding_step"] == 3
+        assert user["onboarding_step"] == 2
         assert user["current_challenge"] is not None
 
         # Should create an onboarding conversation with AI-generated response

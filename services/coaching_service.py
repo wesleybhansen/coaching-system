@@ -193,11 +193,11 @@ Write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximu
         context += """
 
 ## Additional Context
-This is the user's FIRST real coaching interaction. They just shared the biggest challenge they're facing. Your response should:
-1. Acknowledge the SPECIFIC challenge they shared — show you heard them
+This is the user's FIRST real coaching interaction. They just shared their stage, biggest challenge, and business idea. Your response should:
+1. Acknowledge the SPECIFIC challenge they shared - show you heard them
 2. Ask what's the ONE thing they could do THIS WEEK to make progress on that challenge
-3. Keep it warm and encouraging — this sets the tone for the whole relationship
-Do NOT say "You're all set" or "I'll start checking in" — just coach them on their challenge."""
+3. Keep it warm and encouraging - this sets the tone for the whole relationship
+Do NOT say "You're all set" or "I'll start checking in" - just coach them on their challenge."""
 
     return context
 
@@ -288,59 +288,40 @@ def process_email(email_data: dict) -> dict | None:
         logger.info(f"Ignoring email from unknown sender: {from_email}")
         return None
 
-    # Handle multi-step onboarding
+    # Handle onboarding — single reply activates the user
     if user.get("status") == "Onboarding":
-        onboarding_step = user.get("onboarding_step", 1)
         parsed = parse_email(raw_body)
 
-        if onboarding_step <= 1:
-            # They replied with their stage/idea — process it and ask for challenge
-            followup_body = f"Thanks {user.get('first_name', 'there')}! That helps a lot.\n\nOne more thing before we get started: What's the single biggest challenge or question you're facing right now with your business?\n\nOnce I know that, I'll start sending you focused check-ins."
-            db.create_conversation({
-                "user_id": user["id"],
-                "type": "Onboarding",
-                "user_message_raw": raw_body,
-                "user_message_parsed": parsed,
-                "email_subject": email_data.get("subject"),
-                "ai_response": followup_body,
-                "confidence": 8,
-                "gmail_message_id": message_id or None,
-                "status": "Pending Review",
-            })
-            db.update_user(user["id"], {"onboarding_step": 2})
-            logger.info(f"Onboarding step 2 for {from_email} — awaiting review")
-            return None
-        else:
-            # They replied with their challenge — activate them
-            db.update_user(user["id"], {
-                "status": "Active",
-                "onboarding_step": 3,
-                "current_challenge": parsed[:500],
-                "last_response_date": datetime.now(timezone.utc).isoformat(),
-                "gmail_message_id": email_data.get("message_id"),
-            })
+        # Activate user with their reply (stage + challenge + idea in one shot)
+        db.update_user(user["id"], {
+            "status": "Active",
+            "onboarding_step": 2,
+            "current_challenge": parsed[:500],
+            "last_response_date": datetime.now(timezone.utc).isoformat(),
+            "gmail_message_id": email_data.get("message_id"),
+        })
 
-            # Re-fetch user so AI context has status=Active and current_challenge
-            user = db.get_user_by_email(from_email)
+        # Re-fetch user so AI context has status=Active and current_challenge
+        user = db.get_user_by_email(from_email)
 
-            # Generate AI response to their specific challenge
-            result = generate_and_evaluate(user, parsed, message_type="onboarding challenge response")
+        # Generate AI response to their onboarding reply
+        result = generate_and_evaluate(user, parsed, message_type="onboarding challenge response")
 
-            db.create_conversation({
-                "user_id": user["id"],
-                "type": "Onboarding",
-                "user_message_raw": raw_body,
-                "user_message_parsed": parsed,
-                "email_subject": email_data.get("subject"),
-                "ai_response": result["ai_response"],
-                "confidence": result["confidence"],
-                "gmail_message_id": message_id or None,
-                "status": "Pending Review",  # Onboarding always goes through review
-                "resource_referenced": result.get("resource_referenced"),
-                "evaluation_details": result.get("evaluation_details"),
-            })
-            logger.info(f"Onboarding complete for {from_email} — activated, awaiting review")
-            return None
+        db.create_conversation({
+            "user_id": user["id"],
+            "type": "Onboarding",
+            "user_message_raw": raw_body,
+            "user_message_parsed": parsed,
+            "email_subject": email_data.get("subject"),
+            "ai_response": result["ai_response"],
+            "confidence": result["confidence"],
+            "gmail_message_id": message_id or None,
+            "status": "Pending Review",  # Onboarding always goes through review
+            "resource_referenced": result.get("resource_referenced"),
+            "evaluation_details": result.get("evaluation_details"),
+        })
+        logger.info(f"Onboarding complete for {from_email} - activated, awaiting review")
+        return None
 
     # Parse email content
     parsed = parse_email(raw_body)
