@@ -36,6 +36,7 @@ create table if not exists conversations (
     type text check (type in ('Check-in', 'Follow-up', 'Re-engagement', 'Onboarding')),
     user_message_raw text,
     user_message_parsed text,
+    email_subject text,
     ai_response text,
     sent_response text,
     confidence integer,

@@ -78,6 +78,7 @@ def make_conversation(**overrides):
         "user_message_raw": "I made progress.",
         "user_message_parsed": "I made progress.",
         "ai_response": "Great work! Keep going.",
+        "email_subject": None,
         "sent_response": None,
         "confidence": 7,
         "status": "Pending Review",
@@ -524,6 +525,7 @@ def mock_openai(monkeypatch):
         "generate_checkin_question": MagicMock(return_value="Hey! How's the customer discovery going? Made any progress this week?"),
         "analyze_satisfaction": MagicMock(return_value=7.0),
         "confirm_intent": MagicMock(return_value=True),
+        "generate_email_subject": MagicMock(return_value="Checking in on your app"),
     }
 
     for name, mock in mocks.items():

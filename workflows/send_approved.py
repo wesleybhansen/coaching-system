@@ -70,17 +70,43 @@ def run(immediate=False):
                     logger.info(f"Sending to {user['email']} (immediate mode, no delay)")
 
                 # Determine subject and threading based on conversation type
-                is_checkin = conv.get("type") == "Check-in"
+                conv_type = conv.get("type")
 
-                if is_checkin:
-                    # Check-ins start a fresh thread
-                    subject = "Coaching Check-In"
+                if conv_type == "Check-in":
+                    # Check-ins start a fresh thread with a personalized subject
+                    try:
+                        context_parts = [f"Name: {user.get('first_name', 'there')}"]
+                        if user.get("business_idea"):
+                            context_parts.append(f"Project: {user['business_idea']}")
+                        if user.get("current_challenge"):
+                            context_parts.append(f"Current challenge: {user['current_challenge']}")
+                        if user.get("summary"):
+                            context_parts.append(f"Recent progress: {user['summary'][-200:]}")
+                        subject = openai_service.generate_email_subject("\n".join(context_parts))
+                    except Exception:
+                        subject = "Coaching Check-In"
                     in_reply_to = None
                     references = None
+                elif conv_type == "Onboarding":
+                    # Onboarding emails use "Launch Pad Coaching" subject
+                    in_reply_to = user.get("gmail_message_id")
+                    references = user.get("gmail_message_id")
+                    if in_reply_to:
+                        # Follow-up onboarding — thread under original subject
+                        subject = "Re: Launch Pad Coaching"
+                    else:
+                        # First onboarding message — fresh thread
+                        subject = "Launch Pad Coaching"
                 else:
-                    # Threading with resilience: try user's gmail_message_id first,
-                    # fall back to finding the most recent conversation's message_id
-                    subject = "Re: Coaching"
+                    # Reply to user's email — use their thread subject
+                    stored_subject = conv.get("email_subject")
+                    if stored_subject:
+                        if stored_subject.lower().startswith("re:"):
+                            subject = stored_subject
+                        else:
+                            subject = f"Re: {stored_subject}"
+                    else:
+                        subject = "Re: Coaching"
                     in_reply_to = user.get("gmail_message_id")
                     references = user.get("gmail_message_id")
 

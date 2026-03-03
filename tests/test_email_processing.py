@@ -40,6 +40,20 @@ class TestKnownUserNormalMessage:
         assert conv["ai_response"] is not None
         assert conv["status"] in ("Pending Review", "Approved", "Flagged")
 
+    def test_stores_email_subject(self, mock_db, mock_openai, mock_gmail):
+        """The incoming email subject should be stored on the conversation."""
+        user = make_user(email="alice@example.com")
+        mock_db["users"].append(user)
+
+        email = make_email(from_email="alice@example.com",
+                           subject="Re: Checking in on your app",
+                           body="I talked to 3 customers.")
+
+        coaching_service.process_email(email)
+
+        conv = mock_db["conversations"][0]
+        assert conv["email_subject"] == "Re: Checking in on your app"
+
     def test_updates_user_last_response_date(self, mock_db, mock_openai, mock_gmail):
         user = make_user(email="alice@example.com", last_response_date=None)
         mock_db["users"].append(user)
@@ -76,6 +90,18 @@ class TestPauseResume:
         conv = mock_db["conversations"][0]
         assert conv["status"] == "Pending Review"
         assert "pause" in conv["ai_response"].lower()
+
+    def test_pause_stores_email_subject(self, mock_db, mock_openai, mock_gmail):
+        user = make_user(email="bob@example.com", status="Active")
+        mock_db["users"].append(user)
+
+        email = make_email(from_email="bob@example.com", body="pause",
+                           subject="Re: Weekly check-in")
+
+        coaching_service.process_email(email)
+
+        conv = mock_db["conversations"][0]
+        assert conv["email_subject"] == "Re: Weekly check-in"
 
     def test_resume_keyword_sets_user_to_active(self, mock_db, mock_openai, mock_gmail):
         user = make_user(email="bob@example.com", status="Paused")

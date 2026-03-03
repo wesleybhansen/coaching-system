@@ -232,6 +232,48 @@ Do NOT include a sign-off like "Wes" - that will be added automatically.
     return _retry_with_backoff(_call)
 
 
+def generate_email_subject(user_context: str) -> str:
+    """Generate a short, personalized email subject for a check-in.
+
+    Uses GPT-4o-mini to create a subject line referencing the user's
+    project, current challenge, or recent progress. Falls back to
+    "Coaching Check-In" on any error.
+    """
+    client = get_client()
+
+    prompt = f"""Generate a short email subject line for a coaching check-in with this person.
+
+Context:
+{user_context}
+
+Rules:
+- Maximum 50 characters
+- Natural and personal, like a friend checking in
+- Reference their project name, current challenge, or last action
+- Examples: "Checking in on the dog-walking app", "How did the pitch go?", "Quick question about pricing"
+- Output ONLY the subject line text, nothing else
+- No quotes, no "Subject:", no "Re:" prefix"""
+
+    def _call():
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=30,
+        )
+        return response.choices[0].message.content.strip().strip('"\'')
+
+    try:
+        subject = _retry_with_backoff(_call)
+        # Enforce 50-char limit
+        if len(subject) > 50:
+            subject = subject[:47] + "..."
+        return subject
+    except Exception as e:
+        logger.warning(f"generate_email_subject failed, using fallback: {e}")
+        return "Coaching Check-In"
+
+
 def analyze_satisfaction(user_message: str) -> float:
     """Analyze the satisfaction/engagement level of a user's reply.
 
