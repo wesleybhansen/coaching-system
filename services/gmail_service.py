@@ -262,8 +262,7 @@ Before we dive in, I need a little context from you. Just reply with:
 
 Don't overthink it. Even a rough answer gets us moving.
 
-Talk soon,
-Wes"""
+Talk soon,"""
 
 
 def send_onboarding(to_email: str, first_name: str):
@@ -294,8 +293,7 @@ Before we dive in, I need a little context from you. Just reply with:
 
 Don't overthink it. Even a rough answer gets us moving.
 
-Talk soon,
-Wes"""
+Talk soon,"""
 
     return send_email(
         to_email=to_email,

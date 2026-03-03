@@ -331,7 +331,7 @@ def process_email(email_data: dict) -> dict | None:
 
     if intent == "pause":
         db.update_user(user["id"], {"status": "Paused"})
-        pause_body = "No problem - I'll pause check-ins for now. Just reply 'resume' whenever you're ready to pick back up.\n\nWes"
+        pause_body = "No problem - I'll pause check-ins for now. Just reply 'resume' whenever you're ready to pick back up."
         db.create_conversation({
             "user_id": user["id"],
             "type": "Follow-up",
@@ -348,7 +348,7 @@ def process_email(email_data: dict) -> dict | None:
 
     if intent == "resume":
         db.update_user(user["id"], {"status": "Active"})
-        resume_body = "Welcome back! I'll resume the regular check-ins. You'll hear from me soon.\n\nWes"
+        resume_body = "Welcome back! I'll resume the regular check-ins. You'll hear from me soon."
         db.create_conversation({
             "user_id": user["id"],
             "type": "Follow-up",
