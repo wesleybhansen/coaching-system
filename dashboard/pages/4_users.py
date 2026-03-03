@@ -11,9 +11,30 @@ from services import gmail_service
 st.set_page_config(page_title="Users", layout="wide")
 st.title("Users")
 
+# CSS for red delete buttons
+st.markdown("""<style>
+[data-testid="element-container"]:has(.red-btn) {
+    display: none !important;
+}
+[data-testid="element-container"]:has(.red-btn) + [data-testid="element-container"] button {
+    background-color: #ff4b4b !important;
+    color: white !important;
+    border-color: #ff4b4b !important;
+}
+[data-testid="element-container"]:has(.red-btn) + [data-testid="element-container"] button:hover {
+    background-color: #ff2b2b !important;
+    border-color: #ff2b2b !important;
+}
+</style>""", unsafe_allow_html=True)
+
 # Day options for checkin_days multiselect
 DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 DAY_OPTIONS_LOWER = [d.lower() for d in DAY_OPTIONS]
+
+# Form version counter — incremented after each add to clear inputs
+if "add_user_form_version" not in st.session_state:
+    st.session_state["add_user_form_version"] = 0
+form_version = st.session_state["add_user_form_version"]
 
 # Filter
 status_filter = st.selectbox("Filter by status", ["All", "Active", "Paused", "Silent", "Onboarding"])
@@ -32,7 +53,7 @@ if st.session_state.get("user_added"):
 # Add new user — distinct section with a subheader and container
 st.subheader("Add New User")
 with st.container(border=True):
-    with st.form("add_user"):
+    with st.form(f"add_user_{form_version}"):
         form_col1, form_col2 = st.columns(2)
         with form_col1:
             new_email = st.text_input("Email")
@@ -45,7 +66,7 @@ with st.container(border=True):
                 options=DAY_OPTIONS,
                 default=[],
                 max_selections=3,
-                key="new_user_checkin_days",
+                key=f"new_user_checkin_days_{form_version}",
             )
         submitted = st.form_submit_button("Add User", type="primary")
 
@@ -79,6 +100,7 @@ with st.container(border=True):
                         "confidence": 9,
                     })
                 st.session_state["user_added"] = f"User {new_email} added! Onboarding email is in Pending Review."
+                st.session_state["add_user_form_version"] += 1
                 st.rerun()
 
 # User list
@@ -161,6 +183,7 @@ for user in users:
             st.session_state[delete_confirm_key] = False
 
         if not st.session_state[delete_confirm_key]:
+            st.markdown('<div class="red-btn"></div>', unsafe_allow_html=True)
             if st.button("Delete User", key=f"delete_user_{user['id']}"):
                 st.session_state[delete_confirm_key] = True
                 st.rerun()
