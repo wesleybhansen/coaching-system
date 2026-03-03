@@ -125,17 +125,34 @@ st.caption("Individual users can override the default check-in days from the Use
 st.subheader("Thread Cap")
 
 max_replies_val = int(settings.get("max_thread_replies", "4"))
-new_max_replies = st.number_input(
-    "Max thread replies",
-    min_value=1,
-    max_value=10,
-    value=max_replies_val,
-)
-if new_max_replies != max_replies_val:
-    db.set_setting("max_thread_replies", str(new_max_replies))
-    st.success("Max thread replies updated")
+cap_enabled = max_replies_val > 0
 
-st.caption("Maximum follow-up replies per check-in cycle. After this cap, the system waits for the next check-in.")
+new_cap_enabled = st.checkbox(
+    "Enable thread reply limit",
+    value=cap_enabled,
+    help="When disabled, there's no limit on follow-up replies per check-in cycle.",
+)
+
+if new_cap_enabled:
+    display_val = max_replies_val if max_replies_val > 0 else 4
+    new_max_replies = st.number_input(
+        "Max thread replies",
+        min_value=1,
+        max_value=10,
+        value=display_val,
+    )
+    if new_max_replies != max_replies_val:
+        db.set_setting("max_thread_replies", str(new_max_replies))
+        st.success("Max thread replies updated")
+    st.caption("Maximum follow-up replies per check-in cycle. After this cap, the system sends a wrap-up message.")
+elif cap_enabled:
+    # Was enabled, now toggled off — store 0 for unlimited
+    db.set_setting("max_thread_replies", "0")
+    st.success("Thread reply limit disabled (unlimited)")
+    st.rerun()
+
+if not new_cap_enabled:
+    st.caption("Thread reply limit is disabled — users can reply as many times as they want per check-in cycle.")
 
 # ── Processing Schedule ───────────────────────────────────
 st.subheader("Email Processing")

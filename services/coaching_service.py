@@ -164,6 +164,7 @@ def build_assistant_context(user: dict, parsed_message: str, message_type: str =
 Name: {user.get('first_name', 'Unknown')}
 Stage: {user.get('stage', 'Ideation')}
 Business Idea: {user.get('business_idea') or 'Not specified yet'}
+Current Challenge: {user.get('current_challenge') or 'Not specified yet'}
 Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 
 ## Recent Conversation History
@@ -185,7 +186,18 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 {corrected_text}
 
 ## Instructions
-Write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource BY NAME (e.g. "Lecture 7 walks through this" or "Chapter 3 of the Launch System covers this well"). NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
+Write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource BY NAME (e.g. "Lecture 7 walks through this" or "The Launch System Phase 2 covers this well"). NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
+
+    # Add special context for onboarding challenge responses
+    if message_type == "onboarding challenge response":
+        context += """
+
+## Additional Context
+This is the user's FIRST real coaching interaction. They just shared the biggest challenge they're facing. Your response should:
+1. Acknowledge the SPECIFIC challenge they shared — show you heard them
+2. Ask what's the ONE thing they could do THIS WEEK to make progress on that challenge
+3. Keep it warm and encouraging — this sets the tone for the whole relationship
+Do NOT say "You're all set" or "I'll start checking in" — just coach them on their challenge."""
 
     return context
 
@@ -307,16 +319,23 @@ def process_email(email_data: dict) -> dict | None:
                 "gmail_message_id": email_data.get("message_id"),
             })
 
-            welcome_body = f"You're all set, {user.get('first_name', 'there')}. I'll start checking in regularly.\n\nIn the meantime, here's your first nudge: based on what you told me, what's the ONE thing you could do this week to make progress on that challenge?\n\nKeep it small and specific."
+            # Re-fetch user so AI context has status=Active and current_challenge
+            user = db.get_user_by_email(from_email)
+
+            # Generate AI response to their specific challenge
+            result = generate_and_evaluate(user, parsed, message_type="onboarding challenge response")
+
             db.create_conversation({
                 "user_id": user["id"],
                 "type": "Onboarding",
                 "user_message_raw": raw_body,
                 "user_message_parsed": parsed,
-                "ai_response": welcome_body,
-                "confidence": 8,
+                "ai_response": result["ai_response"],
+                "confidence": result["confidence"],
                 "gmail_message_id": message_id or None,
-                "status": "Pending Review",
+                "status": "Pending Review",  # Onboarding always goes through review
+                "resource_referenced": result.get("resource_referenced"),
+                "evaluation_details": result.get("evaluation_details"),
             })
             logger.info(f"Onboarding complete for {from_email} — activated, awaiting review")
             return None
@@ -360,12 +379,13 @@ def process_email(email_data: dict) -> dict | None:
         return None
 
     # Check thread reply cap (max 4 follow-up replies per check-in cycle)
+    # 0 = unlimited (no cap)
     try:
         max_thread_replies = int(db.get_setting("max_thread_replies", "4"))
     except (ValueError, TypeError):
         max_thread_replies = 4
     current_replies = db.count_thread_replies(user["id"])
-    if current_replies >= max_thread_replies:
+    if max_thread_replies > 0 and current_replies >= max_thread_replies:
         logger.info(f"Thread reply cap ({max_thread_replies}) reached for {from_email}, creating wrap-up")
         first_name = user.get("first_name", "there")
         wrap_up_body = f"Great conversation so far, {first_name}! I'll pick this up in your next check-in. Keep the momentum going in the meantime."

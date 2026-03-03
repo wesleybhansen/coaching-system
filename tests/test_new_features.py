@@ -52,7 +52,7 @@ class TestOnboardingFlow:
         assert user["onboarding_step"] == 2
 
     def test_onboarding_step2_reply_activates_user(self, mock_db, mock_openai, mock_gmail):
-        """User with onboarding_step=2 gets activated (status=Active, onboarding_step=3)."""
+        """User with onboarding_step=2 gets activated and receives AI-generated response."""
         user = make_user(
             email="almost@example.com",
             first_name="Almost",
@@ -71,12 +71,20 @@ class TestOnboardingFlow:
         # User should now be active with step 3
         assert user["status"] == "Active"
         assert user["onboarding_step"] == 3
+        assert user["current_challenge"] is not None
 
-        # Should create an onboarding conversation
+        # Should create an onboarding conversation with AI-generated response
         assert len(mock_db["conversations"]) == 1
         conv = mock_db["conversations"][0]
         assert conv["type"] == "Onboarding"
         assert conv["status"] == "Pending Review"
+
+        # Response should come from AI (via generate_and_evaluate), not hardcoded template
+        assert "You're all set" not in conv["ai_response"]
+        # Confidence should come from evaluation, not hardcoded 8
+        assert conv["confidence"] == 7  # mock evaluate_response returns 7
+        # Should have evaluation details from the AI evaluation
+        assert conv.get("evaluation_details") is not None
 
 
 class TestThreadReplyCap:

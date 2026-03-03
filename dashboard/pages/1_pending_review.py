@@ -158,16 +158,48 @@ for conv in conversations:
                 st.rerun()
 
         with btn_col2:
-            if st.button("Reject", key=f"reject_{conv['id']}"):
-                db.update_conversation(conv["id"], {"status": "Rejected"})
-                st.info("Rejected")
-                st.rerun()
+            delete_confirm_key = f"delete_confirm_{conv['id']}"
+            if delete_confirm_key not in st.session_state:
+                st.session_state[delete_confirm_key] = False
+
+            if not st.session_state[delete_confirm_key]:
+                if st.button("Delete", key=f"delete_{conv['id']}"):
+                    st.session_state[delete_confirm_key] = True
+                    st.rerun()
+            else:
+                st.warning("Delete this response? This cannot be undone.")
+                yes_col, no_col = st.columns(2)
+                with yes_col:
+                    if st.button("Yes, delete", key=f"delete_yes_{conv['id']}"):
+                        db.update_conversation(conv["id"], {"status": "Rejected"})
+                        st.session_state[delete_confirm_key] = False
+                        st.rerun()
+                with no_col:
+                    if st.button("Cancel", key=f"delete_cancel_{conv['id']}"):
+                        st.session_state[delete_confirm_key] = False
+                        st.rerun()
 
         with btn_col3:
-            if st.button("Flag", key=f"flag_{conv['id']}"):
-                db.update_conversation(conv["id"], {
-                    "status": "Flagged",
-                    "flag_reason": "Manually flagged during review",
-                })
-                st.warning("Flagged for attention")
-                st.rerun()
+            flag_confirm_key = f"flag_confirm_{conv['id']}"
+            if flag_confirm_key not in st.session_state:
+                st.session_state[flag_confirm_key] = False
+
+            if not st.session_state[flag_confirm_key]:
+                if st.button("Flag", key=f"flag_{conv['id']}"):
+                    st.session_state[flag_confirm_key] = True
+                    st.rerun()
+            else:
+                st.warning("Flag this response for attention?")
+                yes_col, no_col = st.columns(2)
+                with yes_col:
+                    if st.button("Yes, flag", key=f"flag_yes_{conv['id']}"):
+                        db.update_conversation(conv["id"], {
+                            "status": "Flagged",
+                            "flag_reason": "Manually flagged during review",
+                        })
+                        st.session_state[flag_confirm_key] = False
+                        st.rerun()
+                with no_col:
+                    if st.button("Cancel", key=f"flag_cancel_{conv['id']}"):
+                        st.session_state[flag_confirm_key] = False
+                        st.rerun()
