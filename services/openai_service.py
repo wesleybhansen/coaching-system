@@ -56,7 +56,7 @@ def _retry_with_backoff(func, *args, **kwargs):
 
 
 def generate_response(user_context: str, model: str = "gpt-4o") -> str:
-    """Generate a coaching response using the Responses API with file_search."""
+    """Generate a coaching response using the Responses API."""
     client = get_client()
 
     def _call():
@@ -64,10 +64,6 @@ def generate_response(user_context: str, model: str = "gpt-4o") -> str:
             model=model,
             instructions=_get_instructions(),
             input=user_context,
-            tools=[{
-                "type": "file_search",
-                "vector_store_ids": [config.VECTOR_STORE_ID],
-            }],
             temperature=0.7,
             max_output_tokens=1500,  # ~3 paragraphs of coaching response
         )
