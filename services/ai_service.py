@@ -43,35 +43,48 @@ def _extract_user_message(user_context: str) -> str:
     return ""
 
 
+def _retrieve_knowledge(user_context: str, user: dict) -> str:
+    """Retrieve relevant knowledge base excerpts for the user's message.
+
+    Returns formatted knowledge context string, or empty string if
+    retrieval fails or no relevant chunks are found.
+    """
+    try:
+        from services import knowledge_service
+        parsed_message = _extract_user_message(user_context)
+        if parsed_message:
+            query = knowledge_service.build_retrieval_query(user, parsed_message)
+            chunks = knowledge_service.retrieve_relevant_chunks(
+                query, match_count=5, stage_filter=user.get("stage")
+            )
+            return knowledge_service.format_chunks_for_prompt(chunks)
+    except Exception as e:
+        logger.warning(f"Knowledge retrieval failed, continuing without RAG: {e}")
+    return ""
+
+
 def generate_response(user_context: str, user: dict = None) -> str:
     """Generate a coaching response using the configured AI provider.
 
     Args:
         user_context: The assembled coaching context string
-        user: Optional user dict — used to build retrieval query for Anthropic's RAG
+        user: Optional user dict — used to build retrieval query for RAG
     """
     provider, model = get_ai_config()
 
+    # Retrieve relevant knowledge base excerpts for all providers
+    knowledge_context = ""
+    if user:
+        knowledge_context = _retrieve_knowledge(user_context, user)
+
     if provider == "anthropic":
         from services import anthropic_service
-
-        knowledge_context = ""
-        if user:
-            try:
-                from services import knowledge_service
-                parsed_message = _extract_user_message(user_context)
-                if parsed_message:
-                    query = knowledge_service.build_retrieval_query(user, parsed_message)
-                    chunks = knowledge_service.retrieve_relevant_chunks(
-                        query, match_count=5, stage_filter=user.get("stage")
-                    )
-                    knowledge_context = knowledge_service.format_chunks_for_prompt(chunks)
-            except Exception as e:
-                logger.warning(f"Knowledge retrieval failed, continuing without RAG: {e}")
-
         return anthropic_service.generate_response(user_context, model=model, knowledge_context=knowledge_context)
     else:
         from services import openai_service
+        # For OpenAI, append knowledge context directly to the user context
+        if knowledge_context:
+            user_context += f"\n\n## Reference Material from Your Books and Lectures\nThese are actual excerpts from your teaching materials. You may reference these sources naturally if they are directly relevant to what the user is dealing with. Do NOT quote them verbatim — paraphrase in your own voice.\n\n{knowledge_context}"
         return openai_service.generate_response(user_context, model=model)
 
 
