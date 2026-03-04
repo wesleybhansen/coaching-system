@@ -126,6 +126,48 @@ Key challenge: They may be building features instead of selling, or spreading to
 }
 
 
+# ── Resource Relevance Filtering ──────────────────────────────
+
+def _filter_relevant_resources(resources: list, user_message: str) -> list:
+    """Return only resources whose topics are relevant to the user's message."""
+    if not resources or not user_message:
+        return []
+    message_lower = user_message.lower()
+    relevant = []
+    for r in resources:
+        topics = r.get("topics") or []
+        # Check if any topic phrase or significant topic word appears in the message
+        for topic in topics:
+            topic_lower = topic.lower()
+            if topic_lower in message_lower:
+                relevant.append(r)
+                break
+            # Also check individual words (3+ chars) from multi-word topics
+            topic_words = [w for w in topic_lower.split() if len(w) >= 4]
+            if any(w in message_lower for w in topic_words):
+                relevant.append(r)
+                break
+    return relevant
+
+
+def _format_resource_name(name: str) -> str:
+    """Fix resource names from the database (e.g. Chapter -> Phase for Launch System)."""
+    if name.startswith("The Launch System - Chapter"):
+        phase_num = name.replace("The Launch System - Chapter ", "")
+        return f"The Launch System Phase {phase_num}"
+    return name
+
+
+def _format_relevant_resources(resources: list) -> str:
+    """Format filtered resources into a prompt-ready string."""
+    lines = []
+    for r in resources:
+        name = _format_resource_name(r["name"])
+        topics = ", ".join(r.get("topics", [])) if r.get("topics") else ""
+        lines.append(f"- {name}: {r.get('description', '')} (Topics: {topics})")
+    return "\n".join(lines)
+
+
 # ── Context Building ───────────────────────────────────────────
 
 def build_assistant_context(user: dict, parsed_message: str, message_type: str = "check-in response") -> str:
@@ -153,8 +195,17 @@ def build_assistant_context(user: dict, parsed_message: str, message_type: str =
         for c in corrections
     ) if corrections else "No corrections to learn from yet"
 
-    # Available resources for their stage
-    resource_list = db.get_resource_list_for_prompt(user.get("stage"))
+    # Only include resources that are relevant to the user's message
+    all_resources = db.get_resources_by_stage(user.get("stage"))
+    relevant_resources = _filter_relevant_resources(all_resources, parsed_message)
+    if relevant_resources:
+        resource_section = f"""
+
+## Relevant Resources (reference by name only - do NOT include links or URLs)
+These resources are relevant to what the user is discussing. You may reference them if it adds value.
+{_format_relevant_resources(relevant_resources)}"""
+    else:
+        resource_section = ""
 
     stage_prompt = STAGE_PROMPTS.get(user.get("stage", "Ideation"), "")
 
@@ -174,10 +225,7 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 {message_type}
 
 ## Their Current Message
-{parsed_message}
-
-## Available Resources (reference by name only — do NOT include links or URLs)
-{resource_list}
+{parsed_message}{resource_section}
 
 ## Model Responses (examples of your ideal coaching style)
 {model_text}
@@ -186,7 +234,7 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 {corrected_text}
 
 ## Instructions
-Start with "Hey {user.get('first_name', 'there')}," then write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant, point them to a specific resource BY NAME (e.g. "Lecture 7 walks through this" or "The Launch System Phase 2 covers this well"). NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
+Start with "Hey {user.get('first_name', 'there')}," then write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. Only reference a resource if one was listed in the Relevant Resources section above AND it directly helps with what the user is dealing with. If no resources were listed, do NOT reference any resources. NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
 
     # Add special context for onboarding challenge responses
     if message_type == "onboarding challenge response":

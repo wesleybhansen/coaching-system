@@ -359,6 +359,9 @@ def mock_db(monkeypatch):
     def get_resource_list_for_prompt(stage=None):
         return "- Lecture 1: Intro to entrepreneurship (Topics: getting started)"
 
+    def get_resources_by_stage(stage=None):
+        return []
+
     def get_correction_stats():
         return {}
 
@@ -477,6 +480,7 @@ def mock_db(monkeypatch):
     monkeypatch.setattr(db_mod, "has_recent_reengagement", has_recent_reengagement)
     monkeypatch.setattr(db_mod, "count_thread_replies", count_thread_replies)
     monkeypatch.setattr(db_mod, "get_resource_list_for_prompt", get_resource_list_for_prompt)
+    monkeypatch.setattr(db_mod, "get_resources_by_stage", get_resources_by_stage)
     monkeypatch.setattr(db_mod, "get_correction_stats", get_correction_stats)
     monkeypatch.setattr(db_mod, "get_all_resources", get_all_resources)
     monkeypatch.setattr(db_mod, "get_confidence_calibration_data", get_confidence_calibration_data)
