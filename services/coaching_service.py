@@ -179,6 +179,9 @@ Summary of their journey: {user.get('summary') or 'New user, no history yet'}
 ## Corrected Responses (learn from these)
 {corrected_text}
 
+## Coaching Playbook (distilled principles from all past corrections)
+{db.get_setting("coaching_playbook", "No playbook generated yet — it will be created automatically after corrections are made.")}
+
 ## Instructions
 Start with "Hey {user.get('first_name', 'there')}," then write a short coaching response (1-3 paragraphs). Focus on 1-2 key points maximum. If relevant excerpts from the knowledge base appear in a "Reference Material" section below, you may reference those resources by name. If no reference material is provided, do NOT mention any specific resources. NEVER include links, URLs, or attachments. Keep it conversational and human. Do NOT include a sign-off like "Wes" - that will be added automatically. Do NOT wrap your response in JSON or code blocks - just write the natural language coaching response."""
 
@@ -456,3 +459,89 @@ def process_email(email_data: dict) -> dict | None:
 
     logger.info(f"Processed email from {from_email}: status={result['status']}, confidence={result['confidence']}")
     return conversation
+
+
+# ── Coaching Playbook ──────────────────────────────────────────
+
+PLAYBOOK_PROMPT = """You are analyzing corrections that a human coach (Wes) has made to AI-generated coaching responses. Your job is to distill these corrections into a concise set of coaching principles.
+
+Each correction below shows:
+- What the AI originally wrote
+- What Wes corrected it to
+- Why the correction was made
+
+From these, extract the underlying coaching principles — not surface-level style preferences, but how Wes actually thinks about coaching. Focus on:
+- How he frames challenges and pushes people to act
+- What tone and directness level he uses
+- What he avoids (e.g., being too reassuring, giving generic advice)
+- How he handles specific situations (pricing, validation, procrastination, etc.)
+- Any patterns in what the AI consistently gets wrong
+
+Write the playbook as a numbered list of clear, actionable rules. Each rule should be 1-2 sentences. Aim for {target_rules} rules — enough to capture the key patterns without being overwhelming. Do NOT include preamble or explanation — just the numbered rules.
+
+Here are the corrections to analyze:
+
+{corrections_text}"""
+
+
+def regenerate_playbook() -> str | None:
+    """Analyze all corrections and generate/update the coaching playbook.
+
+    Returns the generated playbook text, or None if not enough corrections exist.
+    """
+    corrections = db.get_all_corrections()
+    if len(corrections) < 3:
+        logger.info(f"Only {len(corrections)} correction(s) — need at least 3 to generate playbook")
+        return None
+
+    # Build corrections text for the prompt
+    correction_entries = []
+    for c in corrections:
+        entry = f"AI originally wrote: {c.get('ai_response', 'N/A')}\n"
+        entry += f"Wes corrected it to: {c.get('corrected_response', 'N/A')}\n"
+        entry += f"Because: {c.get('correction_notes', 'N/A')}"
+        correction_entries.append(entry)
+
+    corrections_text = "\n\n---\n\n".join(correction_entries)
+
+    # Scale rules with correction count: ~1 rule per 3 corrections, cap at 20
+    target_rules = min(max(len(corrections) // 3, 5), 20)
+
+    prompt = PLAYBOOK_PROMPT.format(
+        corrections_text=corrections_text,
+        target_rules=target_rules,
+    )
+
+    # Use the configured AI provider to generate the playbook
+    provider, model = ai_service.get_ai_config()
+
+    try:
+        if provider == "anthropic":
+            from services import anthropic_service
+            client = anthropic_service.get_client()
+            response = client.messages.create(
+                model=model,
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            playbook = response.content[0].text.strip()
+        else:
+            from services import openai_service as oai
+            client = oai.get_client()
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            playbook = response.choices[0].message.content.strip()
+
+        # Save to settings
+        db.set_setting("coaching_playbook", playbook)
+        db.set_setting("coaching_playbook_updated", datetime.now(timezone.utc).isoformat())
+        db.set_setting("coaching_playbook_correction_count", str(len(corrections)))
+        logger.info(f"Coaching playbook regenerated from {len(corrections)} corrections")
+        return playbook
+
+    except Exception as e:
+        logger.error(f"Failed to generate coaching playbook: {e}")
+        return None

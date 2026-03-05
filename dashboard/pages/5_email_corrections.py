@@ -31,7 +31,13 @@ with st.expander("Add manual correction"):
                 "correction_notes": notes,
                 "correction_type": correction_type,
             })
-            st.success("Correction saved!")
+            # Auto-regenerate coaching playbook with new correction
+            try:
+                from services.coaching_service import regenerate_playbook
+                regenerate_playbook()
+                st.success("Correction saved! Coaching playbook updated.")
+            except Exception:
+                st.success("Correction saved!")
             st.rerun()
 
 # List existing corrections

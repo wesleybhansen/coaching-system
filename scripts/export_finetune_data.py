@@ -23,7 +23,6 @@ import argparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from db import supabase_client as db
-from services import openai_service
 
 
 def load_system_message() -> str:

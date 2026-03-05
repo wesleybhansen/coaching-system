@@ -152,6 +152,12 @@ for conv in conversations:
                         "correction_notes": "Edited during review",
                         "correction_type": "Content",
                     })
+                    # Auto-regenerate coaching playbook with new correction
+                    try:
+                        from services.coaching_service import regenerate_playbook
+                        regenerate_playbook()
+                    except Exception:
+                        pass  # Non-critical — playbook will catch up next time
 
                 db.update_conversation(conv["id"], updates)
                 st.success("Approved!" + (" (correction saved)" if was_edited else ""))
