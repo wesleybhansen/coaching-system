@@ -220,6 +220,44 @@ if new_notif_email != notif_email:
 
 st.caption("Error alerts will be sent to this email.")
 
+# ── Coaching Playbook ─────────────────────────────────────
+st.subheader("Coaching Playbook")
+st.markdown("The playbook is a set of coaching principles automatically distilled from your corrections. "
+            "It updates every time you save a new correction. The AI reads these rules when drafting responses.")
+
+playbook = settings.get("coaching_playbook", "")
+playbook_updated = settings.get("coaching_playbook_updated", "")
+playbook_count = settings.get("coaching_playbook_correction_count", "0")
+
+if playbook:
+    if playbook_updated:
+        st.caption(f"Last updated: {playbook_updated[:16].replace('T', ' ')} UTC — based on {playbook_count} correction(s)")
+
+    edited_playbook = st.text_area("Coaching principles (editable)", value=playbook, height=300)
+    col_save, col_regen = st.columns(2)
+    with col_save:
+        if edited_playbook != playbook:
+            if st.button("Save edits", use_container_width=True):
+                db.set_setting("coaching_playbook", edited_playbook)
+                st.success("Playbook saved.")
+                st.rerun()
+    with col_regen:
+        if st.button("Regenerate from corrections", use_container_width=True,
+                      help="Re-analyze all corrections and rebuild the playbook from scratch"):
+            try:
+                from services.coaching_service import regenerate_playbook
+                with st.spinner("Analyzing corrections..."):
+                    result = regenerate_playbook()
+                if result:
+                    st.success("Playbook regenerated!")
+                    st.rerun()
+                else:
+                    st.warning("Need at least 3 corrections to generate a playbook.")
+            except Exception as e:
+                st.error(f"Failed: {e}")
+else:
+    st.info("No playbook yet. It will be generated automatically after you save at least 3 corrections.")
+
 # ── Gmail Status ──────────────────────────────────────────
 st.subheader("Gmail Connection")
 try:
