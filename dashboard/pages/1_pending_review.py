@@ -11,201 +11,220 @@ from db import supabase_client as db
 st.set_page_config(page_title="Pending Review", layout="wide")
 st.title("Pending Review")
 
+# Yellow styling for archive/unarchive buttons (targets by widget key prefix)
+st.markdown("""
+<style>
+div[class*="st-key-archive_"] button,
+div[class*="st-key-unarchive_"] button {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+    border-color: #ffc107 !important;
+}
+div[class*="st-key-archive_"] button:hover,
+div[class*="st-key-unarchive_"] button:hover {
+    background-color: #e0a800 !important;
+    border-color: #e0a800 !important;
+    color: #000 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 conversations = db.get_conversations_by_status("Pending Review")
 
 if not conversations:
     st.success("No pending responses to review!")
-    st.stop()
+else:
+    st.info(f"{len(conversations)} response(s) awaiting review")
 
-st.info(f"{len(conversations)} response(s) awaiting review")
+    # ── Bulk approve section ───────────────────────────────────────
+    eligible = [c for c in conversations if (c.get("confidence") or 0) >= 7]
 
-# ── Bulk approve section ───────────────────────────────────────
-eligible = [c for c in conversations if (c.get("confidence") or 0) >= 7]
+    if eligible:
+        st.markdown("---")
+        bulk_col1, bulk_col2, bulk_col3 = st.columns([2, 2, 2])
 
-if eligible:
-    st.markdown("---")
-    bulk_col1, bulk_col2, bulk_col3 = st.columns([2, 2, 2])
+        with bulk_col1:
+            if st.button("Select all eligible", key="select_all"):
+                for c in eligible:
+                    st.session_state[f"bulk_{c['id']}"] = True
+                st.rerun()
+        with bulk_col2:
+            if st.button("Deselect all", key="deselect_all"):
+                for c in conversations:
+                    st.session_state[f"bulk_{c['id']}"] = False
+                st.rerun()
 
-    with bulk_col1:
-        if st.button("Select all eligible", key="select_all"):
-            for c in eligible:
-                st.session_state[f"bulk_{c['id']}"] = True
-            st.rerun()
-    with bulk_col2:
-        if st.button("Deselect all", key="deselect_all"):
-            for c in conversations:
-                st.session_state[f"bulk_{c['id']}"] = False
-            st.rerun()
+        selected_ids = [c["id"] for c in eligible if st.session_state.get(f"bulk_{c['id']}")]
 
-    selected_ids = [c["id"] for c in eligible if st.session_state.get(f"bulk_{c['id']}")]
+        with bulk_col3:
+            if selected_ids:
+                if st.button(f"Bulk Approve {len(selected_ids)} Selected", type="primary", key="bulk_approve"):
+                    for cid in selected_ids:
+                        db.update_conversation(cid, {
+                            "status": "Approved",
+                            "approved_at": datetime.now(timezone.utc).isoformat(),
+                            "approved_by": "manual_bulk",
+                        })
+                    st.success(f"Bulk approved {len(selected_ids)} conversation(s)")
+                    st.rerun()
 
-    with bulk_col3:
-        if selected_ids:
-            if st.button(f"Bulk Approve {len(selected_ids)} Selected", type="primary", key="bulk_approve"):
-                for cid in selected_ids:
-                    db.update_conversation(cid, {
+        st.markdown("---")
+
+    # ── Individual conversation cards ──────────────────────────────
+    for conv in conversations:
+        user = conv.get("users") or {}
+        user_name = user.get("first_name") or user.get("email", "Unknown")
+        confidence = conv.get("confidence", "?")
+        is_eligible = isinstance(confidence, (int, float)) and confidence >= 7
+
+        with st.container(border=True):
+            # Header with optional bulk checkbox
+            header_cols = st.columns([0.5, 3, 1, 1]) if eligible else st.columns([3, 1, 1])
+
+            if eligible:
+                with header_cols[0]:
+                    if is_eligible:
+                        st.checkbox(
+                            "Select",
+                            key=f"bulk_{conv['id']}",
+                            label_visibility="collapsed",
+                        )
+                header_cols[1].subheader(f"{user_name}")
+                header_cols[2].metric("Confidence", f"{confidence}/10")
+                header_cols[3].write(f"**Stage:** {user.get('stage', '?')}")
+            else:
+                header_cols[0].subheader(f"{user_name}")
+                header_cols[1].metric("Confidence", f"{confidence}/10")
+                header_cols[2].write(f"**Stage:** {user.get('stage', '?')}")
+
+            # Confidence breakdown (sub-scores from evaluation)
+            eval_details = conv.get("evaluation_details")
+            if isinstance(eval_details, dict):
+                with st.expander("Confidence breakdown"):
+                    s1, s2, s3, s4, s5 = st.columns(5)
+                    s1.metric("Relevance", f"{eval_details.get('relevance', '?')}/10")
+                    s2.metric("Tone", f"{eval_details.get('tone', '?')}/10")
+                    s3.metric("Actionability", f"{eval_details.get('actionability', '?')}/10")
+                    s4.metric("Length", f"{eval_details.get('length', '?')}/10")
+                    s5.metric("Closing Q", f"{eval_details.get('closing_question', '?')}/10")
+
+            if conv.get("flag_reason"):
+                st.warning(f"Flag: {conv['flag_reason']}")
+
+            # User's message
+            st.markdown("**Their message:**")
+            st.text_area(
+                "User message",
+                value=conv.get("user_message_parsed") or conv.get("user_message_raw", ""),
+                height=100,
+                disabled=True,
+                key=f"user_msg_{conv['id']}",
+                label_visibility="collapsed",
+            )
+
+            # AI response (editable)
+            st.markdown("**AI Response (editable):**")
+            edited_response = st.text_area(
+                "AI response",
+                value=conv.get("ai_response", ""),
+                height=150,
+                key=f"ai_resp_{conv['id']}",
+                label_visibility="collapsed",
+            )
+
+            # Context expander
+            with st.expander("View user context"):
+                st.write(f"**Business Idea:** {user.get('business_idea', 'Not specified')}")
+                st.write(f"**Summary:** {user.get('summary', 'No summary yet')}")
+
+                recent = db.get_recent_conversations(user.get("id", ""), limit=3)
+                if recent:
+                    st.markdown("**Recent exchanges:**")
+                    for r in recent:
+                        st.markdown(f"- **User:** {(r.get('user_message_parsed') or '')[:100]}...")
+                        st.markdown(f"  **Coach:** {(r.get('sent_response') or r.get('ai_response') or '')[:100]}...")
+
+            # Action buttons
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+            with btn_col1:
+                if st.button("Approve", key=f"approve_{conv['id']}", type="primary"):
+                    original = conv.get("ai_response", "")
+                    was_edited = edited_response.strip() != original.strip()
+
+                    updates = {
                         "status": "Approved",
                         "approved_at": datetime.now(timezone.utc).isoformat(),
-                        "approved_by": "manual_bulk",
-                    })
-                st.success(f"Bulk approved {len(selected_ids)} conversation(s)")
-                st.rerun()
+                        "approved_by": "manual",
+                    }
 
-    st.markdown("---")
-
-# ── Individual conversation cards ──────────────────────────────
-for conv in conversations:
-    user = conv.get("users") or {}
-    user_name = user.get("first_name") or user.get("email", "Unknown")
-    confidence = conv.get("confidence", "?")
-    is_eligible = isinstance(confidence, (int, float)) and confidence >= 7
-
-    with st.container(border=True):
-        # Header with optional bulk checkbox
-        header_cols = st.columns([0.5, 3, 1, 1]) if eligible else st.columns([3, 1, 1])
-
-        if eligible:
-            with header_cols[0]:
-                if is_eligible:
-                    st.checkbox(
-                        "Select",
-                        key=f"bulk_{conv['id']}",
-                        label_visibility="collapsed",
-                    )
-            header_cols[1].subheader(f"{user_name}")
-            header_cols[2].metric("Confidence", f"{confidence}/10")
-            header_cols[3].write(f"**Stage:** {user.get('stage', '?')}")
-        else:
-            header_cols[0].subheader(f"{user_name}")
-            header_cols[1].metric("Confidence", f"{confidence}/10")
-            header_cols[2].write(f"**Stage:** {user.get('stage', '?')}")
-
-        # Confidence breakdown (sub-scores from evaluation)
-        eval_details = conv.get("evaluation_details")
-        if isinstance(eval_details, dict):
-            with st.expander("Confidence breakdown"):
-                s1, s2, s3, s4, s5 = st.columns(5)
-                s1.metric("Relevance", f"{eval_details.get('relevance', '?')}/10")
-                s2.metric("Tone", f"{eval_details.get('tone', '?')}/10")
-                s3.metric("Actionability", f"{eval_details.get('actionability', '?')}/10")
-                s4.metric("Length", f"{eval_details.get('length', '?')}/10")
-                s5.metric("Closing Q", f"{eval_details.get('closing_question', '?')}/10")
-
-        if conv.get("flag_reason"):
-            st.warning(f"Flag: {conv['flag_reason']}")
-
-        # User's message
-        st.markdown("**Their message:**")
-        st.text_area(
-            "User message",
-            value=conv.get("user_message_parsed") or conv.get("user_message_raw", ""),
-            height=100,
-            disabled=True,
-            key=f"user_msg_{conv['id']}",
-            label_visibility="collapsed",
-        )
-
-        # AI response (editable)
-        st.markdown("**AI Response (editable):**")
-        edited_response = st.text_area(
-            "AI response",
-            value=conv.get("ai_response", ""),
-            height=150,
-            key=f"ai_resp_{conv['id']}",
-            label_visibility="collapsed",
-        )
-
-        # Context expander
-        with st.expander("View user context"):
-            st.write(f"**Business Idea:** {user.get('business_idea', 'Not specified')}")
-            st.write(f"**Summary:** {user.get('summary', 'No summary yet')}")
-
-            recent = db.get_recent_conversations(user.get("id", ""), limit=3)
-            if recent:
-                st.markdown("**Recent exchanges:**")
-                for r in recent:
-                    st.markdown(f"- **User:** {(r.get('user_message_parsed') or '')[:100]}...")
-                    st.markdown(f"  **Coach:** {(r.get('sent_response') or r.get('ai_response') or '')[:100]}...")
-
-        # Action buttons
-        btn_col1, btn_col2, btn_col3 = st.columns(3)
-
-        with btn_col1:
-            if st.button("Approve", key=f"approve_{conv['id']}", type="primary"):
-                original = conv.get("ai_response", "")
-                was_edited = edited_response.strip() != original.strip()
-
-                updates = {
-                    "status": "Approved",
-                    "approved_at": datetime.now(timezone.utc).isoformat(),
-                    "approved_by": "manual",
-                }
-
-                if was_edited:
-                    updates["sent_response"] = edited_response
-                    # Create correction record for learning
-                    db.create_correction({
-                        "conversation_id": conv["id"],
-                        "original_message": conv.get("user_message_parsed", ""),
-                        "ai_response": original,
-                        "corrected_response": edited_response,
-                        "correction_notes": "Edited during review",
-                        "correction_type": "Content",
-                    })
-                    # Auto-regenerate coaching playbook with new correction
-                    try:
-                        from services.coaching_service import regenerate_playbook
-                        regenerate_playbook()
-                    except Exception:
-                        pass  # Non-critical — playbook will catch up next time
-
-                db.update_conversation(conv["id"], updates)
-                st.success("Approved!" + (" (correction saved)" if was_edited else ""))
-                st.rerun()
-
-        with btn_col2:
-            delete_confirm_key = f"delete_confirm_{conv['id']}"
-            if delete_confirm_key not in st.session_state:
-                st.session_state[delete_confirm_key] = False
-
-            if not st.session_state[delete_confirm_key]:
-                if st.button("Delete", key=f"delete_{conv['id']}"):
-                    st.session_state[delete_confirm_key] = True
-                    st.rerun()
-            else:
-                st.warning("Delete this response? This cannot be undone.")
-                yes_col, no_col = st.columns(2)
-                with yes_col:
-                    if st.button("Yes, delete", key=f"delete_yes_{conv['id']}"):
-                        db.update_conversation(conv["id"], {"status": "Rejected"})
-                        st.session_state[delete_confirm_key] = False
-                        st.rerun()
-                with no_col:
-                    if st.button("Cancel", key=f"delete_cancel_{conv['id']}"):
-                        st.session_state[delete_confirm_key] = False
-                        st.rerun()
-
-        with btn_col3:
-            flag_confirm_key = f"flag_confirm_{conv['id']}"
-            if flag_confirm_key not in st.session_state:
-                st.session_state[flag_confirm_key] = False
-
-            if not st.session_state[flag_confirm_key]:
-                if st.button("Flag", key=f"flag_{conv['id']}"):
-                    st.session_state[flag_confirm_key] = True
-                    st.rerun()
-            else:
-                st.warning("Flag this response for attention?")
-                yes_col, no_col = st.columns(2)
-                with yes_col:
-                    if st.button("Yes, flag", key=f"flag_yes_{conv['id']}"):
-                        db.update_conversation(conv["id"], {
-                            "status": "Flagged",
-                            "flag_reason": "Manually flagged during review",
+                    if was_edited:
+                        updates["sent_response"] = edited_response
+                        # Create correction record for learning
+                        db.create_correction({
+                            "conversation_id": conv["id"],
+                            "original_message": conv.get("user_message_parsed", ""),
+                            "ai_response": original,
+                            "corrected_response": edited_response,
+                            "correction_notes": "Edited during review",
+                            "correction_type": "Content",
                         })
-                        st.session_state[flag_confirm_key] = False
+                        # Auto-regenerate coaching playbook with new correction
+                        try:
+                            from services.coaching_service import regenerate_playbook
+                            regenerate_playbook()
+                        except Exception:
+                            pass  # Non-critical — playbook will catch up next time
+
+                    db.update_conversation(conv["id"], updates)
+                    st.success("Approved!" + (" (correction saved)" if was_edited else ""))
+                    st.rerun()
+
+            with btn_col2:
+                if st.button("Archive", key=f"archive_{conv['id']}", type="secondary"):
+                    db.update_conversation(conv["id"], {"status": "Archived"})
+                    st.rerun()
+
+            with btn_col3:
+                flag_confirm_key = f"flag_confirm_{conv['id']}"
+                if flag_confirm_key not in st.session_state:
+                    st.session_state[flag_confirm_key] = False
+
+                if not st.session_state[flag_confirm_key]:
+                    if st.button("Flag", key=f"flag_{conv['id']}"):
+                        st.session_state[flag_confirm_key] = True
                         st.rerun()
-                with no_col:
-                    if st.button("Cancel", key=f"flag_cancel_{conv['id']}"):
-                        st.session_state[flag_confirm_key] = False
+                else:
+                    st.warning("Flag this response for attention?")
+                    yes_col, no_col = st.columns(2)
+                    with yes_col:
+                        if st.button("Yes, flag", key=f"flag_yes_{conv['id']}"):
+                            db.update_conversation(conv["id"], {
+                                "status": "Flagged",
+                                "flag_reason": "Manually flagged during review",
+                            })
+                            st.session_state[flag_confirm_key] = False
+                            st.rerun()
+                    with no_col:
+                        if st.button("Cancel", key=f"flag_cancel_{conv['id']}"):
+                            st.session_state[flag_confirm_key] = False
+                            st.rerun()
+
+# ── Archived conversations ────────────────────────────────────
+archived = db.get_conversations_by_status("Archived")
+
+if archived:
+    st.markdown("---")
+    with st.expander(f"Archived ({len(archived)})", expanded=False):
+        for conv in archived:
+            user = conv.get("users") or {}
+            user_name = user.get("first_name") or user.get("email", "Unknown")
+
+            with st.container(border=True):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"**{user_name}** — {(conv.get('user_message_parsed') or conv.get('user_message_raw', ''))[:120]}...")
+                with col2:
+                    if st.button("Unarchive", key=f"unarchive_{conv['id']}"):
+                        db.update_conversation(conv["id"], {"status": "Pending Review"})
                         st.rerun()
