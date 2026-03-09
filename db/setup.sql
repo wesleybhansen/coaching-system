@@ -40,7 +40,7 @@ create table if not exists conversations (
     ai_response text,
     sent_response text,
     confidence integer,
-    status text default 'Pending Review' check (status in ('Pending Review', 'Approved', 'Sent', 'Flagged', 'Rejected')),
+    status text default 'Pending Review' check (status in ('Pending Review', 'Approved', 'Sent', 'Flagged', 'Rejected', 'Archived')),
     flag_reason text,
     gmail_thread_id text,
     gmail_message_id text unique,
