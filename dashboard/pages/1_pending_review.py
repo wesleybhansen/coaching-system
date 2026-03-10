@@ -223,7 +223,7 @@ if archived:
             with st.container(border=True):
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    st.markdown(f"**{user_name}** — {(conv.get('user_message_parsed') or conv.get('user_message_raw', ''))[:120]}...")
+                    st.markdown(f"**{user_name}** — {(conv.get('user_message_parsed') or conv.get('user_message_raw') or '')[:120]}...")
                 with col2:
                     if st.button("Unarchive", key=f"unarchive_{conv['id']}"):
                         db.update_conversation(conv["id"], {"status": "Pending Review"})
