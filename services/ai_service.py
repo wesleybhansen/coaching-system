@@ -7,7 +7,7 @@ from db import supabase_client as db
 logger = logging.getLogger(__name__)
 
 PROVIDERS = {
-    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-5.2"],
+    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-5.4", "gpt-5-mini", "gpt-5-nano"],
     "anthropic": ["claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-5-20250918"],
 }
 

@@ -240,7 +240,7 @@ Regardless of which provider you choose for response generation, all internal fu
 
 | Provider | Models |
 |----------|--------|
-| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-5.2 |
+| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-5.4, gpt-5-mini, gpt-5-nano |
 | **Anthropic** | claude-sonnet-4-6, claude-opus-4-6, claude-opus-4-5-20250918 |
 
 To change the provider or model, go to **Settings** in the dashboard, update the AI Provider and Model dropdowns, and click Save. The change takes effect on the next workflow run -- no restart or redeployment needed.
